@@ -1149,7 +1149,7 @@ personalize();
 renderAll();
 renderChat();
 if(needsOnboard) $('onboard').classList.add('open');
-loadRemote();
+loadRemote().then(()=>{ if(S && S.id && S.profile) schedSync(); });
 </script>
 </body>
 </html>
