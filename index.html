@@ -908,18 +908,56 @@ function coachReply(q){
 }
 
 function ask(q){ $('chat-in').value=q; send(); }
-function send(){
+
+let chatHist = [];
+function buildContext(){
+  const {cal,pro} = totals(); const p = P();
+  const prog = PROGRAM[S.programDay||0];
+  return JSON.stringify({
+    name: p.name,
+    calorieTarget: p.calTarget, proteinTarget: p.proTarget,
+    todayCalories: cal, todayProtein: pro,
+    mealsToday: S.meals.map(m=>`${m.name} (${m.cal} kcal, ${m.pro}g protein, ${m.time})`),
+    currentWeightLbs: S.weights[S.weights.length-1], goalWeightLbs: p.goalWeight,
+    recentWeights: S.weights.slice(-7),
+    trainingStreakDays: S.streak,
+    currentProgramDay: 'Day '+((S.programDay||0)+1)+' — '+prog.name+' ('+prog.sub+')',
+    todaysExercises: prog.ex.map(e=>e[0]+' '+e[1]),
+    workoutInProgress: !!S.active,
+    recentWorkouts: S.workouts.slice(0,4).map(w=>w.type+' — '+w.when+(w.vol?` (${w.setsDone} sets, ${w.vol} lb volume)`:'')),
+    lastLiftWeights: S.lastLifts||{},
+    stackDueToday: S.stack.filter(x=>!x.taken).map(d=>`${d.name} (${d.dose}) at ${fmtTime(d.hour,d.min)}`),
+    stackTakenToday: S.stack.filter(x=>x.taken).map(d=>d.name)
+  });
+}
+async function send(){
   const inp=$('chat-in'); const q=inp.value.trim(); if(!q) return;
   inp.value='';
   const msgs=$('msgs');
   msgs.insertAdjacentHTML('beforeend', `<div class="msg user">${esc(q)}</div>`);
   msgs.scrollTop=msgs.scrollHeight;
+  chatHist.push({role:'user', content:q});
   $('typing').classList.add('on');
-  setTimeout(()=>{
-    $('typing').classList.remove('on');
-    msgs.insertAdjacentHTML('beforeend', `<div class="msg ai">${coachReply(q)}</div>`);
-    msgs.scrollTop=msgs.scrollHeight;
-  }, 700+Math.random()*600);
+  let reply = null;
+  try{
+    const r = await fetch('/api/chat', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({messages: chatHist, context: buildContext()})
+    });
+    const data = await r.json();
+    if(r.ok && data.text) reply = data.text;
+  }catch(e){ /* offline or not configured — fall back to mock */ }
+  $('typing').classList.remove('on');
+  if(reply){
+    chatHist.push({role:'assistant', content:reply});
+    msgs.insertAdjacentHTML('beforeend', `<div class="msg ai">${esc(reply)}</div>`);
+  } else {
+    const fb = coachReply(q);
+    chatHist.push({role:'assistant', content: fb.replace(/<[^>]+>/g,'')});
+    msgs.insertAdjacentHTML('beforeend', `<div class="msg ai">${fb}</div>`);
+  }
+  msgs.scrollTop=msgs.scrollHeight;
 }
 
 /* =============== onboarding =============== */
