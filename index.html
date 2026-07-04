@@ -487,7 +487,7 @@ async function loadRemote(){
       if(sr && sr.state && (sr.updated||0) > (S.updatedAt||0)+2000){
         S = sr.state;
         try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
-        personalize(); renderAll();
+        personalize(); renderAll(); renderChat();
       }
     }
   }catch(e){}
@@ -1041,6 +1041,14 @@ function coachReply(q){
 function ask(q){ $('chat-in').value=q; send(); }
 
 let chatHist = [];
+function renderChat(){
+  chatHist = (S.chat || []).slice();
+  if(!chatHist.length) return;
+  const msgs = $('msgs');
+  msgs.innerHTML = $('chat-greet').outerHTML +
+    chatHist.map(m=>`<div class="msg ${m.role==='user'?'user':'ai'}">${esc(m.content)}</div>`).join('');
+  msgs.scrollTop = msgs.scrollHeight;
+}
 function buildContext(){
   const {cal,pro} = totals(); const p = P();
   const prog = PROGRAM[S.programDay||0];
@@ -1089,6 +1097,8 @@ async function send(){
     msgs.insertAdjacentHTML('beforeend', `<div class="msg ai">${fb}</div>`);
   }
   msgs.scrollTop=msgs.scrollHeight;
+  S.chat = chatHist.slice(-60);
+  store.save();
 }
 
 /* =============== onboarding =============== */
@@ -1137,6 +1147,7 @@ function personalize(){
 if(S && S.profile && !S.id){ S.id = randId(); store.save(); }
 personalize();
 renderAll();
+renderChat();
 if(needsOnboard) $('onboard').classList.add('open');
 loadRemote();
 </script>
