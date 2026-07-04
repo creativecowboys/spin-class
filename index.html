@@ -266,7 +266,7 @@
 
   <header>
     <div class="logo">SPIN<span>CLASS</span></div>
-    <div class="avatar" id="avatar">DC</div>
+    <div class="avatar" id="avatar" onclick="if(S.profile)openModal('profile')" style="cursor:pointer;">DC</div>
   </header>
 
   <main id="main">
@@ -461,9 +461,37 @@
 <script>
 /* =============== state =============== */
 const store = {
-  save(){ try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){} },
+  save(){ S.updatedAt = Date.now(); try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){} schedSync(); },
   load(){ try{ return JSON.parse(localStorage.getItem('forge')); }catch(e){ return null; } }
 };
+
+/* =============== cloud sync (device-id based, no login yet) =============== */
+function randId(){ return Array.from(crypto.getRandomValues(new Uint8Array(12)), b=>b.toString(16).padStart(2,'0')).join(''); }
+let syncT = null;
+function schedSync(){
+  if(!S || !S.id || !S.profile) return;
+  clearTimeout(syncT);
+  syncT = setTimeout(()=>{
+    fetch('/api/sync', {method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({id:S.id, state:S})}).catch(()=>{});
+  }, 1500);
+}
+async function loadRemote(){
+  try{
+    const pr = await fetch('/api/program').then(r=>r.ok?r.json():null).catch(()=>null);
+    if(pr && pr.days && pr.days.length===7){ PROGRAM = pr.days; if(!S.active) renderAll(); }
+  }catch(e){}
+  try{
+    if(S && S.id){
+      const sr = await fetch('/api/sync?id='+S.id).then(r=>r.ok?r.json():null).catch(()=>null);
+      if(sr && sr.state && (sr.updated||0) > (S.updatedAt||0)+2000){
+        S = sr.state;
+        try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
+        personalize(); renderAll();
+      }
+    }
+  }catch(e){}
+}
 
 const seed = {
   meals: [
@@ -486,7 +514,7 @@ const seed = {
 };
 
 /* =============== program: PPL Strength A/B (6-day) =============== */
-const PROGRAM = [
+let PROGRAM = [
   {name:'Push A', sub:'Bench emphasis + Abs', big:'Bench', ex:[
     ['Barbell Flat Bench Press','5 × 3–5','3–4 min',1],
     ['Incline Barbell Press','3 × 6–8','2–3 min'],
@@ -576,9 +604,12 @@ function go(t){
 }
 
 /* =============== render =============== */
+function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function mealsToday(){ const t=todayISO(); return S.meals.filter(m=>!m.date || m.date===t); }
 function totals(){
-  const cal = S.meals.reduce((a,m)=>a+m.cal,0);
-  const pro = S.meals.reduce((a,m)=>a+m.pro,0);
+  const list = mealsToday();
+  const cal = list.reduce((a,m)=>a+m.cal,0);
+  const pro = list.reduce((a,m)=>a+m.pro,0);
   return {cal, pro};
 }
 
@@ -651,7 +682,8 @@ function renderMeals(){
   const {cal,pro} = totals();
   $('m-total').textContent = cal+' kcal · '+pro+'g protein';
   const el = $('meal-list');
-  el.innerHTML = S.meals.length ? S.meals.map((m,i)=>`
+  const todays = mealsToday();
+  el.innerHTML = todays.length ? todays.map((m,i)=>`
     <div class="item">
       <div class="emoji">${m.emoji}</div>
       <div class="info"><b>${esc(m.name)}</b><small>${m.time}</small></div>
@@ -916,6 +948,18 @@ function openModal(kind){
     <h3>Log Weight</h3>
     <div class="field"><label>Weight (lbs)</label><input id="f-w" type="number" step="0.1" placeholder="209.5"></div>
     <button class="btn" onclick="saveWeight()">Save</button>`;
+  if(kind==='profile'){
+    const p = P();
+    sheet.innerHTML = `
+    <h3>Your Profile</h3>
+    <div class="field"><label>Name</label><input id="f-pname" value="${esc(p.name)}"></div>
+    <div class="fieldrow">
+      <div class="field"><label>Calories / day</label><input id="f-pcal" type="number" value="${p.calTarget}"></div>
+      <div class="field"><label>Protein (g) / day</label><input id="f-ppro" type="number" value="${p.proTarget}"></div>
+    </div>
+    <div class="field"><label>Goal weight (lbs)</label><input id="f-pgw" type="number" step="0.1" value="${p.goalWeight||''}"></div>
+    <button class="btn" onclick="saveProfile()">Save</button>`;
+  }
   if(kind==='compound') sheet.innerHTML = `
     <h3>Add to Stack</h3>
     <div class="field"><label>Name</label><input id="f-cname" placeholder="e.g. TB-500, Zinc, Fish Oil"></div>
@@ -933,7 +977,7 @@ function closeModal(){ $('modal').classList.remove('open'); }
 function saveMeal(){
   const name=$('f-name').value.trim(), cal=+$('f-cal').value||0, pro=+$('f-pro').value||0;
   if(!name) return toast('Name it first!');
-  S.meals.push({name, cal, pro, emoji:'🍽', time:nowStr()});
+  S.meals.push({name, cal, pro, emoji:'🍽', time:nowStr(), date:todayISO()});
   store.save(); renderAll(); closeModal(); toast('Meal logged ✓');
 }
 function saveWorkout(){
@@ -948,6 +992,15 @@ function saveWeight(){
   if(!w) return toast('Enter a weight');
   S.weights.push(w); if(S.weights.length>14) S.weights.shift();
   store.save(); renderAll(); closeModal(); toast('Weight logged ✓');
+}
+function saveProfile(){
+  const name=$('f-pname').value.trim();
+  if(!name) return toast('Name required');
+  S.profile.name = name;
+  S.profile.calTarget = +$('f-pcal').value || 2400;
+  S.profile.proTarget = +$('f-ppro').value || 180;
+  S.profile.goalWeight = +$('f-pgw').value || null;
+  store.save(); personalize(); renderAll(); closeModal(); toast('Profile updated ✓');
 }
 function saveCompound(){
   const name=$('f-cname').value.trim(), dose=$('f-cdose').value.trim();
@@ -995,7 +1048,7 @@ function buildContext(){
     name: p.name,
     calorieTarget: p.calTarget, proteinTarget: p.proTarget,
     todayCalories: cal, todayProtein: pro,
-    mealsToday: S.meals.map(m=>`${m.name} (${m.cal} kcal, ${m.pro}g protein, ${m.time})`),
+    mealsToday: mealsToday().map(m=>`${m.name} (${m.cal} kcal, ${m.pro}g protein, ${m.time})`),
     currentWeightLbs: S.weights[S.weights.length-1], goalWeightLbs: p.goalWeight,
     recentWeights: S.weights.slice(-7),
     trainingStreakDays: S.streak,
@@ -1066,6 +1119,7 @@ function finishOnboard(demo){
     S = {meals:[], workouts:[], weights:[w], streak:0, stack:[]};
   }
   S.profile = {name, goalWeight:gw, calTarget:cal, proTarget:pro};
+  S.id = randId();
   store.save();
   personalize(); renderAll();
   $('onboard').classList.remove('open');
@@ -1080,9 +1134,11 @@ function personalize(){
 }
 
 /* =============== boot =============== */
+if(S && S.profile && !S.id){ S.id = randId(); store.save(); }
 personalize();
 renderAll();
 if(needsOnboard) $('onboard').classList.add('open');
+loadRemote();
 </script>
 </body>
 </html>

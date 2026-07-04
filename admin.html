@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPIN CLASS — Admin</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+  :root{
+    --bg:#0b0b0f; --surface:#15151c; --surface2:#1d1d27; --border:#2a2a38;
+    --text:#f2f2f7; --muted:#8a8a9a; --accent:#ccff00; --accent2:#ff3d71; --accent3:#00e0ff;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:960px;margin:0 auto;padding:24px 16px 80px;}
+  h1{font-size:22px;font-weight:900;letter-spacing:2px;font-style:italic;margin-bottom:4px;}
+  h1 span{color:var(--accent);}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:22px;}
+  .tabs{display:flex;gap:8px;margin-bottom:20px;}
+  .tabbtn{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px 18px;font-size:13.5px;font-weight:800;cursor:pointer;}
+  .tabbtn.on{background:var(--accent);color:#0b0b0f;border-color:var(--accent);}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:12px;}
+  .btn{background:var(--accent);color:#0b0b0f;border:none;border-radius:10px;padding:11px 18px;font-size:13.5px;font-weight:900;cursor:pointer;text-transform:uppercase;letter-spacing:.5px;}
+  .btn.ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+  .btn.danger{background:var(--accent2);color:#fff;}
+  .btn.small{padding:7px 12px;font-size:12px;}
+  input,select{padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;outline:none;}
+  input:focus{border-color:var(--accent);}
+  label{display:block;font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:5px;}
+  .field{margin-bottom:12px;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+  .row .field{flex:1;min-width:120px;margin-bottom:0;}
+  .muted{color:var(--muted);font-size:12.5px;}
+  .mhead{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;}
+  .mhead .nm{font-size:16px;font-weight:900;}
+  .mhead .stats{color:var(--muted);font-size:12.5px;}
+  .mbody{display:none;border-top:1px solid var(--border);margin-top:14px;padding-top:14px;}
+  .mbody.open{display:block;}
+  .sect{font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin:16px 0 8px;}
+  .wlog{border-bottom:1px solid var(--border);padding:9px 0;font-size:13.5px;}
+  .wlog:last-child{border-bottom:none;}
+  .wlog small{color:var(--muted);display:block;font-size:11.5px;}
+  .wlog .sets{color:var(--accent3);font-size:12px;margin-top:3px;line-height:1.6;}
+  .pill{display:inline-block;background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:3px 10px;font-size:11.5px;color:var(--muted);margin:2px 4px 2px 0;}
+  .pill b{color:var(--text);}
+  /* program builder */
+  .pday{border:1px solid var(--border);border-radius:14px;margin-bottom:14px;overflow:hidden;}
+  .pday-h{background:var(--surface2);padding:12px 14px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+  .pday-h .field{margin-bottom:0;}
+  .pday-b{padding:10px 14px 14px;}
+  .exline{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .exline input.nm{flex:3;min-width:160px;}
+  .exline input.tg{flex:1.2;min-width:80px;}
+  .exline input.rs{flex:1;min-width:70px;}
+  .exline .bigck{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--muted);font-weight:800;white-space:nowrap;}
+  .icobtn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:8px;width:30px;height:34px;cursor:pointer;font-size:13px;flex-shrink:0;}
+  .icobtn:hover{color:var(--text);}
+  .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-90px);background:var(--accent);color:#0b0b0f;font-weight:800;font-size:13.5px;padding:11px 22px;border-radius:24px;transition:transform .3s;z-index:99;}
+  .toast.show{transform:translateX(-50%) translateY(0);}
+  .login{max-width:380px;margin:14vh auto 0;}
+  #app{display:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- login -->
+  <div class="login" id="login">
+    <h1>SPIN<span>CLASS</span> <span style="font-style:normal;color:var(--muted);font-size:14px;">/ ADMIN</span></h1>
+    <div class="sub">Coach's office. Members never see this page.</div>
+    <div class="card">
+      <div class="field"><label>Admin key</label><input id="key" type="password" style="width:100%;" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <button class="btn" onclick="doLogin()">Enter</button>
+      <div class="muted" id="loginmsg" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <!-- app -->
+  <div id="app">
+    <h1>SPIN<span>CLASS</span> <span style="font-style:normal;color:var(--muted);font-size:14px;">/ ADMIN</span></h1>
+    <div class="sub">Full control. With great power, etc.</div>
+    <div class="tabs">
+      <button class="tabbtn on" id="tb-members" onclick="showTab('members')">Members</button>
+      <button class="tabbtn" id="tb-program" onclick="showTab('program')">Program Builder</button>
+    </div>
+
+    <div id="tab-members">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="muted" id="mcount">Loading members…</div>
+        <button class="btn ghost small" onclick="loadMembers()">↻ Refresh</button>
+      </div>
+      <div id="members"></div>
+    </div>
+
+    <div id="tab-program" style="display:none;">
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div>
+          <b>Master Program</b>
+          <div class="muted" id="progstatus">Loading…</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn ghost small" onclick="loadDefaultProgram()">Reset to PPL Default</button>
+          <button class="btn small" onclick="pushProgram()">🚀 Push to App</button>
+        </div>
+      </div>
+      <div id="builder"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">Saved</div>
+</div>
+
+<datalist id="exdl"></datalist>
+
+<script>
+const EXDB=[["Band Concentration Curl","Band","Biceps"],["Band Curl","Band","Biceps"],["Bodyweight Curl (Bar)","Bodyweight","Biceps"],["Chin-Up (Bicep Focus)","Bodyweight","Biceps"],["Cable Curl (Straight Bar)","Cable","Biceps"],["Single-Arm Cable Curl","Cable","Biceps"],["21s (Barbell)","Free Weight","Biceps"],["Alternating Dumbbell Curl","Free Weight","Biceps"],["Barbell Curl","Free Weight","Biceps"],["Concentration Curl","Free Weight","Biceps"],["Drag Curl","Free Weight","Biceps"],["Dumbbell Curl","Free Weight","Biceps"],["EZ-Bar Curl","Free Weight","Biceps"],["Preacher Curl (Barbell)","Free Weight","Biceps"],["Zottman Curl","Free Weight","Biceps"],["Kettlebell Curl","Kettlebell","Biceps"],["Machine Bicep Curl","Machine","Biceps"],["Machine Preacher Curl","Machine","Biceps"],["Bayesian Cable Curl","Cable","Biceps (Long Head)"],["High Cable Curl","Cable","Biceps (Long Head)"],["Incline Dumbbell Curl","Free Weight","Biceps (Long Head)"],["Spider Curl","Free Weight","Biceps (Short Head)"],["Band Hammer Curl","Band","Brachialis"],["Cable Rope Hammer Curl","Cable","Brachialis"],["Hammer Curl","Free Weight","Brachialis"],["Kettlebell Hammer Curl","Kettlebell","Brachialis"],["Reverse Barbell Curl","Free Weight","Brachioradialis"],["Band Chest Press","Band","Chest"],["Band Fly / Crossover","Band","Chest"],["Band Push-Up (Resisted)","Band","Chest"],["Archer Push-Up","Bodyweight","Chest"],["Clap / Plyometric Push-Up","Bodyweight","Chest"],["Push-Up","Bodyweight","Chest"],["Wide-Grip Push-Up","Bodyweight","Chest"],["Cable Chest Press","Cable","Chest"],["Cable Fly (Mid)","Cable","Chest"],["Single-Arm Cable Fly","Cable","Chest"],["Barbell Bench Press","Free Weight","Chest"],["Dumbbell Bench Press","Free Weight","Chest"],["Dumbbell Fly","Free Weight","Chest"],["Dumbbell Pullover","Free Weight","Chest"],["Floor Press (Barbell)","Free Weight","Chest"],["Floor Press (Dumbbell)","Free Weight","Chest"],["Kettlebell Bench Press","Kettlebell","Chest"],["Kettlebell Floor Press","Kettlebell","Chest"],["Kettlebell Fly","Kettlebell","Chest"],["Chest Press Machine","Machine","Chest"],["Hammer Strength Chest Press","Machine","Chest"],["Pec Deck / Machine Fly","Machine","Chest"],["Smith Machine Bench Press","Machine","Chest"],["Kettlebell Halo","Kettlebell","Delts"],["Band Wrist Extension","Band","Forearm Extensors"],["Barbell Reverse Wrist Curl","Free Weight","Forearm Extensors"],["Band Wrist Curl","Band","Forearm Flexors"],["Cable Wrist Curl","Cable","Forearm Flexors"],["Barbell Wrist Curl","Free Weight","Forearm Flexors"],["Dumbbell Wrist Curl","Free Weight","Forearm Flexors"],["Kettlebell Wrist Curl","Kettlebell","Forearm Flexors"],["Wrist Roller","Free Weight","Forearms"],["Band Front Raise","Band","Front Delts"],["Band Overhead Press","Band","Front Delts"],["Handstand Push-Up","Bodyweight","Front Delts"],["Pike Push-Up","Bodyweight","Front Delts"],["Cable Front Raise","Cable","Front Delts"],["Arnold Press","Free Weight","Front Delts"],["Barbell Front Raise","Free Weight","Front Delts"],["Dumbbell Front Raise","Free Weight","Front Delts"],["Dumbbell Shoulder Press","Free Weight","Front Delts"],["Overhead Press (Barbell)","Free Weight","Front Delts"],["Push Press","Free Weight","Front Delts"],["Seated Barbell Press","Free Weight","Front Delts"],["Seated Dumbbell Press","Free Weight","Front Delts"],["Z Press","Free Weight","Front Delts"],["Kettlebell Arnold Press","Kettlebell","Front Delts"],["Kettlebell Bottoms-Up Press","Kettlebell","Front Delts"],["Kettlebell Overhead Press","Kettlebell","Front Delts"],["Kettlebell Push Press","Kettlebell","Front Delts"],["Hammer Strength Shoulder Press","Machine","Front Delts"],["Shoulder Press Machine","Machine","Front Delts"],["Smith Machine Overhead Press","Machine","Front Delts"],["Dead Hang","Bodyweight","Grip"],["Plate Pinch","Free Weight","Grip"],["Svend Press","Free Weight","Inner Chest"],["Band Bent-Over Row","Band","Lats"],["Band Lat Pulldown","Band","Lats"],["Band Straight-Arm Pulldown","Band","Lats"],["Chin-Up","Bodyweight","Lats"],["Commando Pull-Up","Bodyweight","Lats"],["Muscle-Up","Bodyweight","Lats"],["Neutral-Grip Pull-Up","Bodyweight","Lats"],["Pull-Up","Bodyweight","Lats"],["Wide-Grip Pull-Up","Bodyweight","Lats"],["Lat Pulldown (Close Grip)","Cable","Lats"],["Lat Pulldown (Neutral Grip)","Cable","Lats"],["Lat Pulldown (Wide Grip)","Cable","Lats"],["Single-Arm Cable Row","Cable","Lats"],["Straight-Arm Pulldown","Cable","Lats"],["Barbell Bent-Over Row","Free Weight","Lats"],["Dumbbell Bent-Over Row (Two-Arm)","Free Weight","Lats"],["Dumbbell Row (Single-Arm)","Free Weight","Lats"],["Meadows Row","Free Weight","Lats"],["Pendlay Row","Free Weight","Lats"],["Yates Row (Underhand)","Free Weight","Lats"],["Kettlebell Bent-Over Row","Kettlebell","Lats"],["Kettlebell Row (Single-Arm)","Kettlebell","Lats"],["Assisted Pull-Up Machine","Machine","Lats"],["Hammer Strength High Row","Machine","Lats"],["Hammer Strength Row","Machine","Lats"],["Lat Pulldown Machine","Machine","Lats"],["Chest Dip","Bodyweight","Lower Chest"],["Incline Push-Up","Bodyweight","Lower Chest"],["Cable Crossover (High to Low)","Cable","Lower Chest"],["Decline Barbell Bench Press","Free Weight","Lower Chest"],["Decline Dumbbell Bench Press","Free Weight","Lower Chest"],["Reverse-Grip Pulldown","Cable","Lower Lats"],["Scapular Pull-Up","Bodyweight","Lower Traps"],["Cable Y-Raise","Cable","Lower Traps"],["Band Seated Row","Band","Mid Back"],["Australian Pull-Up","Bodyweight","Mid Back"],["Inverted Row","Bodyweight","Mid Back"],["Seated Cable Row (Close)","Cable","Mid Back"],["Seated Cable Row (Wide)","Cable","Mid Back"],["Chest-Supported Dumbbell Row","Free Weight","Mid Back"],["Chest-Supported Row (Barbell)","Free Weight","Mid Back"],["Seal Row","Free Weight","Mid Back"],["T-Bar Row","Free Weight","Mid Back"],["Hammer Strength Low Row","Machine","Mid Back"],["Seated Row Machine","Machine","Mid Back"],["Face Pull (Trap Focus)","Cable","Mid Traps"],["Neck Curl (Plate)","Free Weight","Neck"],["Neck Harness Extension","Free Weight","Neck"],["Neck Machine","Machine","Neck"],["Band Face Pull","Band","Rear Delts"],["Band Pull-Apart","Band","Rear Delts"],["Band Rear Delt Fly","Band","Rear Delts"],["Cable Face Pull","Cable","Rear Delts"],["Cable Rear Delt Fly","Cable","Rear Delts"],["Bent-Over Lateral Raise","Free Weight","Rear Delts"],["Dumbbell Rear Delt Fly","Free Weight","Rear Delts"],["Reverse Pec Deck","Machine","Rear Delts"],["Band Lateral Raise","Band","Side Delts"],["Band Upright Row","Band","Side Delts"],["Cable Lateral Raise","Cable","Side Delts"],["Cable Upright Row","Cable","Side Delts"],["Behind-the-Neck Press","Free Weight","Side Delts"],["Dumbbell Lateral Raise","Free Weight","Side Delts"],["Leaning Lateral Raise","Free Weight","Side Delts"],["Upright Row (Barbell)","Free Weight","Side Delts"],["Kettlebell Lateral Raise","Kettlebell","Side Delts"],["Lateral Raise Machine","Machine","Side Delts"],["Cable Shrug","Cable","Traps"],["Barbell Shrug","Free Weight","Traps"],["Barbell Shrug (Trap)","Free Weight","Traps"],["Dumbbell Shrug","Free Weight","Traps"],["Trap Bar Shrug","Free Weight","Traps"],["Kettlebell High Pull","Kettlebell","Traps"],["Machine Shrug","Machine","Traps"],["Band Kickback","Band","Triceps"],["Band Pushdown","Band","Triceps"],["Bench Dip","Bodyweight","Triceps"],["Body Weight Skull Crusher","Bodyweight","Triceps"],["Diamond Push-Up","Bodyweight","Triceps"],["Diamond Push-Up (Triceps)","Bodyweight","Triceps"],["Triceps Dip (Parallel Bars)","Bodyweight","Triceps"],["Cable Kickback","Cable","Triceps"],["Cable Pushdown (Straight Bar)","Cable","Triceps"],["Cable Rope Pushdown","Cable","Triceps"],["Single-Arm Cable Pushdown","Cable","Triceps"],["Close-Grip Bench Press","Free Weight","Triceps"],["Dumbbell Kickback","Free Weight","Triceps"],["JM Press","Free Weight","Triceps"],["Skull Crusher (Dumbbell)","Free Weight","Triceps"],["Skull Crusher (EZ-Bar)","Free Weight","Triceps"],["Tate Press","Free Weight","Triceps"],["Kettlebell Close-Grip Floor Press","Kettlebell","Triceps"],["Kettlebell Skull Crusher","Kettlebell","Triceps"],["Dip Machine","Machine","Triceps"],["Smith Machine Close-Grip Press","Machine","Triceps"],["Triceps Extension Machine","Machine","Triceps"],["Band Overhead Extension","Band","Triceps (Long Head)"],["Cable Overhead Extension","Cable","Triceps (Long Head)"],["Overhead Barbell Extension","Free Weight","Triceps (Long Head)"],["Overhead Dumbbell Extension","Free Weight","Triceps (Long Head)"],["Kettlebell Overhead Extension","Kettlebell","Triceps (Long Head)"],["Reverse-Grip Pushdown","Cable","Triceps (Medial Head)"],["Decline Push-Up","Bodyweight","Upper Chest"],["Pseudo Planche Push-Up","Bodyweight","Upper Chest"],["Cable Crossover (Low to High)","Cable","Upper Chest"],["Guillotine Press","Free Weight","Upper Chest"],["Incline Barbell Bench Press","Free Weight","Upper Chest"],["Incline Dumbbell Bench Press","Free Weight","Upper Chest"],["Incline Dumbbell Fly","Free Weight","Upper Chest"],["Incline Chest Press Machine","Machine","Upper Chest"],["Smith Machine Incline Press","Machine","Upper Chest"],["Band Hip Adduction","Band","Adductors"],["Copenhagen Plank","Bodyweight","Adductors"],["Cable Hip Adduction","Cable","Adductors"],["Hip Adduction Machine","Machine","Adductors"],["Band Calf Raise","Band","Calves (Gastroc)"],["Bodyweight Calf Raise","Bodyweight","Calves (Gastroc)"],["Single-Leg Calf Raise","Bodyweight","Calves (Gastroc)"],["Standing Calf Raise (Barbell)","Free Weight","Calves (Gastroc)"],["Standing Calf Raise (Dumbbell)","Free Weight","Calves (Gastroc)"],["Kettlebell Calf Raise","Kettlebell","Calves (Gastroc)"],["Leg Press Calf Raise","Machine","Calves (Gastroc)"],["Smith Machine Calf Raise","Machine","Calves (Gastroc)"],["Standing Calf Raise Machine","Machine","Calves (Gastroc)"],["Seated Calf Raise (Barbell)","Free Weight","Calves (Soleus)"],["Seated Calf Raise Machine","Machine","Calves (Soleus)"],["Band Glute Kickback","Band","Glutes"],["Band Hip Thrust","Band","Glutes"],["Donkey Kick","Bodyweight","Glutes"],["Frog Pump","Bodyweight","Glutes"],["Glute Bridge","Bodyweight","Glutes"],["Single-Leg Glute Bridge","Bodyweight","Glutes"],["Cable Glute Kickback","Cable","Glutes"],["Cable Pull-Through","Cable","Glutes"],["Barbell Glute Bridge","Free Weight","Glutes"],["Barbell Hip Thrust","Free Weight","Glutes"],["Curtsy Lunge","Free Weight","Glutes"],["Dumbbell Hip Thrust","Free Weight","Glutes"],["Low-Bar Squat","Free Weight","Glutes"],["Single-Leg Hip Thrust","Free Weight","Glutes"],["Kettlebell Hip Thrust","Kettlebell","Glutes"],["Hip Thrust Machine","Machine","Glutes"],["Standing Glute Kickback Machine","Machine","Glutes"],["Band Clamshell","Band","Glutes (Medius)"],["Band Hip Abduction","Band","Glutes (Medius)"],["Band Lateral Walk","Band","Glutes (Medius)"],["Band Monster Walk","Band","Glutes (Medius)"],["Fire Hydrant","Bodyweight","Glutes (Medius)"],["Hip Abduction Machine","Machine","Glutes (Medius)"],["Band Good Morning","Band","Hamstrings"],["Band Leg Curl","Band","Hamstrings"],["Band Romanian Deadlift","Band","Hamstrings"],["Nordic Curl","Bodyweight","Hamstrings"],["Single-Leg Glute Bridge (Ham)","Bodyweight","Hamstrings"],["Slider Leg Curl","Bodyweight","Hamstrings"],["Stability Ball Leg Curl","Bodyweight","Hamstrings"],["Good Morning","Free Weight","Hamstrings"],["Romanian Deadlift (Barbell)","Free Weight","Hamstrings"],["Romanian Deadlift (Dumbbell)","Free Weight","Hamstrings"],["Single-Leg RDL (Dumbbell)","Free Weight","Hamstrings"],["Stiff-Leg Deadlift","Free Weight","Hamstrings"],["Kettlebell Romanian Deadlift","Kettlebell","Hamstrings"],["Kettlebell Single-Leg RDL","Kettlebell","Hamstrings"],["Glute-Ham Raise","Machine","Hamstrings"],["Lying Leg Curl","Machine","Hamstrings"],["Seated Leg Curl","Machine","Hamstrings"],["Standing Leg Curl","Machine","Hamstrings"],["Box Jump","Bodyweight","Legs"],["Broad Jump","Bodyweight","Legs"],["Band Leg Extension","Band","Quads"],["Band Lunge","Band","Quads"],["Band Squat","Band","Quads"],["Bodyweight Lunge","Bodyweight","Quads"],["Bodyweight Squat","Bodyweight","Quads"],["Cossack Squat","Bodyweight","Quads"],["Jump Squat","Bodyweight","Quads"],["Pistol Squat","Bodyweight","Quads"],["Sissy Squat","Bodyweight","Quads"],["Wall Sit","Bodyweight","Quads"],["Back Squat","Free Weight","Quads"],["Barbell Split Squat","Free Weight","Quads"],["Box Squat","Free Weight","Quads"],["Bulgarian Split Squat","Free Weight","Quads"],["Dumbbell Front Squat","Free Weight","Quads"],["Forward Lunge","Free Weight","Quads"],["Front Squat","Free Weight","Quads"],["Goblet Squat (Dumbbell)","Free Weight","Quads"],["High-Bar Squat","Free Weight","Quads"],["Pause Squat","Free Weight","Quads"],["Reverse Lunge","Free Weight","Quads"],["Step-Up","Free Weight","Quads"],["Walking Lunge","Free Weight","Quads"],["Zercher Squat","Free Weight","Quads"],["Kettlebell Bulgarian Split Squat","Kettlebell","Quads"],["Kettlebell Front Squat (Double)","Kettlebell","Quads"],["Kettlebell Goblet Squat","Kettlebell","Quads"],["Kettlebell Lunge","Kettlebell","Quads"],["Belt Squat Machine","Machine","Quads"],["Hack Squat","Machine","Quads"],["Leg Extension","Machine","Quads"],["Leg Press","Machine","Quads"],["Pendulum Squat","Machine","Quads"],["Single-Leg Extension","Machine","Quads"],["Smith Machine Squat","Machine","Quads"],["V-Squat Machine","Machine","Quads"],["Band Crunch","Band","Abs"],["Dragon Flag","Bodyweight","Abs"],["Sit-Up","Bodyweight","Abs"],["Toes-to-Bar","Bodyweight","Abs"],["V-Up","Bodyweight","Abs"],["Cable Crunch","Cable","Abs"],["Ab Wheel Rollout","Free Weight","Abs"],["Weighted Sit-Up","Free Weight","Abs"],["Ab Crunch Machine","Machine","Abs"],["Band Pallof Press","Band","Core"],["Bird Dog","Bodyweight","Core"],["Dead Bug","Bodyweight","Core"],["Hollow Body Hold","Bodyweight","Core"],["L-Sit","Bodyweight","Core"],["Mountain Climber","Bodyweight","Core"],["Plank","Bodyweight","Core"],["Cable Pallof Press","Cable","Core"],["Flutter Kick","Bodyweight","Lower Abs"],["Hanging Knee Raise","Bodyweight","Lower Abs"],["Hanging Leg Raise","Bodyweight","Lower Abs"],["Leg Raise (Lying)","Bodyweight","Lower Abs"],["Captain's Chair Leg Raise","Machine","Lower Abs"],["Band Woodchopper","Band","Obliques"],["Bicycle Crunch","Bodyweight","Obliques"],["Russian Twist (Bodyweight)","Bodyweight","Obliques"],["Side Plank","Bodyweight","Obliques"],["Cable Russian Twist","Cable","Obliques"],["Cable Woodchopper (High to Low)","Cable","Obliques"],["Cable Woodchopper (Low to High)","Cable","Obliques"],["Dumbbell Side Bend","Free Weight","Obliques"],["Landmine Twist","Free Weight","Obliques"],["Russian Twist (Weighted)","Free Weight","Obliques"],["Suitcase Carry","Free Weight","Obliques"],["Kettlebell Russian Twist","Kettlebell","Obliques"],["Kettlebell Side Bend","Kettlebell","Obliques"],["Kettlebell Windmill","Kettlebell","Obliques"],["Rotary Torso Machine","Machine","Obliques"],["Crunch","Bodyweight","Upper Abs"],["Deadlift (Conventional)","Free Weight","Back"],["Snatch-Grip Deadlift","Free Weight","Back"],["Sumo Deadlift","Free Weight","Back"],["Kettlebell Deadlift","Kettlebell","Back"],["Kettlebell Turkish Get-Up","Kettlebell","Core"],["Farmer's Carry","Free Weight","Forearms"],["Kettlebell Farmer's Carry","Kettlebell","Forearms"],["Wall Walk","Bodyweight","Front Delts"],["Band Speed Deadlift","Band","Full Body"],["Band Thruster","Band","Full Body"],["Bear Crawl","Bodyweight","Full Body"],["Burpee","Bodyweight","Full Body"],["Mountain Climber (Cardio)","Bodyweight","Full Body"],["Clean Pull","Free Weight","Full Body"],["Clean and Jerk","Free Weight","Full Body"],["Hang Clean","Free Weight","Full Body"],["Hang Snatch","Free Weight","Full Body"],["Power Clean","Free Weight","Full Body"],["Power Snatch","Free Weight","Full Body"],["Push Jerk","Free Weight","Full Body"],["Snatch","Free Weight","Full Body"],["Thruster (Barbell)","Free Weight","Full Body"],["Kettlebell Around-the-World","Kettlebell","Full Body"],["Kettlebell Clean","Kettlebell","Full Body"],["Kettlebell Clean and Press","Kettlebell","Full Body"],["Kettlebell Figure-8","Kettlebell","Full Body"],["Kettlebell Single-Arm Swing","Kettlebell","Full Body"],["Kettlebell Snatch","Kettlebell","Full Body"],["Kettlebell Snatch (Double)","Kettlebell","Full Body"],["Kettlebell Swing (Two-Hand)","Kettlebell","Full Body"],["Kettlebell Thruster","Kettlebell","Full Body"],["Sumo Deadlift (Glute Focus)","Free Weight","Glutes"],["Kettlebell Sumo Deadlift","Kettlebell","Glutes"],["Kettlebell Swing (Glute)","Kettlebell","Glutes"],["Deficit Deadlift","Free Weight","Hamstrings"],["Kettlebell Swing (Hamstring)","Kettlebell","Hamstrings"],["Kettlebell Renegade Row","Kettlebell","Lats"],["Overhead Squat","Free Weight","Quads"],["Kettlebell Overhead Squat","Kettlebell","Quads"],["Rack Pull","Free Weight","Upper Back"]];
+const DEFPROG=[{"name":"Push A","sub":"Bench emphasis + Abs","big":"Bench","ex":[["Barbell Flat Bench Press","5 × 3–5","3–4 min",1],["Incline Barbell Press","3 × 6–8","2–3 min"],["Weighted Dip","3 × 6–8","2 min"],["Machine Shoulder Press","3 × 8–10","2 min"],["Machine Chest Fly","3 × 12–15","60–90 s"],["Cable Lateral Raise","4 × 12–15","60–90 s"],["Smith Machine Skull Crusher","3 × 8–10","2 min"],["Cable Triceps Pushdown","3 × 12–15","60–90 s"],["Abs — your own routine","—","—"]]},{"name":"Pull A","sub":"Vertical emphasis","big":null,"ex":[["Weighted Pull-up","4 × 5–8","2–3 min"],["Barbell Row","4 × 6–8","2–3 min"],["Lat Pulldown (close/neutral)","3 × 8–10","2 min"],["Chest-Supported Row","3 × 10–12","2 min"],["Face Pull","3 × 15–20","60 s"],["Face-Away Bayesian Cable Curl","4 × 8–12","90 s"],["Hammer Curl","3 × 10–12","60–90 s"],["DB Preacher Curl","3 × 10–12","60–90 s"]]},{"name":"Legs A","sub":"Squat emphasis + Abs","big":"Squat","ex":[["Back Squat","5 × 3–5","3–4 min",1],["Leg Press","3 × 8–10","2–3 min"],["Hack Squat","3 × 8–10","2 min"],["Seated Leg Extension","3 × 12–15","90 s"],["Seated Leg Curl","3 × 10–12","90 s"],["Standing Calf Raise","4 × 8–10","90 s"],["Seated Calf Raise","3 × 15–20","90 s"],["Abs — your own routine","—","—"]]},{"name":"Push B","sub":"Shoulder / OHP emphasis","big":null,"ex":[["Overhead Barbell Press","4 × 4–6","3 min",1],["Incline Barbell Press","4 × 6–8","2–3 min"],["Rear Delt Fly / Reverse Pec Deck","3 × 15–20","60 s"],["Arnold Press","3 × 8–10","2 min"],["Lateral Raise","4 × 12–15","60–90 s"],["Cable Triceps Kickback","3 × 12–15","60–90 s"],["Overhead Cable Triceps Ext.","3 × 12–15","60–90 s"]]},{"name":"Pull B","sub":"Horizontal emphasis + Abs","big":null,"ex":[["Pendlay / T-Bar Row","4 × 6–8","2–3 min"],["Seated Cable Row","3 × 10–12","2 min"],["Chest-Supported DB Row","3 × 10–12","2 min"],["Pull-up (bodyweight)","3 × AMRAP","2 min"],["Rear Delt Fly","3 × 15–20","60 s"],["Face-Away Bayesian Cable Curl","3 × 10–12","90 s"],["EZ-Bar Curl","3 × 8–10","90 s"],["Abs — your own routine","—","—"]]},{"name":"Legs B","sub":"Deadlift / posterior emphasis","big":"Deadlift","ex":[["Deadlift","4 × 2–4","3–5 min",1],["Romanian Deadlift","3 × 6–8","2–3 min"],["Machine Glute Bridge","3 × 10–12","90 s"],["Lying Leg Curl","3 × 10–12","90 s"],["Leg Extension","3 × 12–15","90 s"],["Seated Calf Raise","4 × 10–12","90 s"]]},{"name":"Rest Day","sub":"Cardio (Zone 2, longer end) + Core","big":null,"ex":[["Zone 2 cardio","20–30 min","—"],["Core — your own routine","—","—"]]}];
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+const KEY=()=>sessionStorage.getItem('scAdminKey')||'';
+
+async function api(path,opts={}){
+  opts.headers=Object.assign({'content-type':'application/json','x-admin-key':KEY()},opts.headers||{});
+  const r=await fetch(path,opts);
+  if(r.status===401){ sessionStorage.removeItem('scAdminKey'); location.reload(); throw new Error('unauthorized'); }
+  return r;
+}
+
+/* ---------- login ---------- */
+async function doLogin(){
+  const k=$('key').value.trim();
+  if(!k) return;
+  sessionStorage.setItem('scAdminKey',k);
+  $('loginmsg').textContent='Checking…';
+  const r=await fetch('/api/users',{headers:{'x-admin-key':k}});
+  if(r.status===401){ $('loginmsg').textContent='Wrong key.'; sessionStorage.removeItem('scAdminKey'); return; }
+  boot();
+}
+function boot(){
+  $('login').style.display='none';
+  $('app').style.display='block';
+  // populate datalist once
+  $('exdl').innerHTML = EXDB.map(e=>`<option value="${esc(e[0])}">${esc(e[2])} · ${esc(e[1])}</option>`).join('');
+  loadMembers(); loadProgram();
+}
+
+/* ---------- members ---------- */
+let MEMBERS=[];
+async function loadMembers(){
+  $('mcount').textContent='Loading members…';
+  try{
+    const r=await api('/api/users');
+    const data=await r.json();
+    MEMBERS=data.users||[];
+    renderMembers();
+  }catch(e){ $('mcount').textContent='Failed to load: '+e; }
+}
+function fmtDate(ts){ return ts? new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '—'; }
+function renderMembers(){
+  $('mcount').textContent = MEMBERS.length+' member'+(MEMBERS.length===1?'':'s');
+  $('members').innerHTML = MEMBERS.length ? MEMBERS.map((m,i)=>{
+    const s=m.state||{}; const p=s.profile||{};
+    const w=(s.weights&&s.weights.length)?s.weights[s.weights.length-1]:null;
+    const wos=(s.workouts||[]);
+    return `<div class="card">
+      <div class="mhead" onclick="document.getElementById('mb-${i}').classList.toggle('open')">
+        <div>
+          <div class="nm">${esc(p.name||'(no name)')}</div>
+          <div class="stats">Last active ${fmtDate(m.updated)} · ${wos.length} workouts · streak ${s.streak||0}${w?' · '+w+' lbs':''}</div>
+        </div>
+        <div class="muted">▼</div>
+      </div>
+      <div class="mbody" id="mb-${i}">
+        <div class="sect">Profile (admin edit)</div>
+        <div class="row">
+          <div class="field"><label>Name</label><input id="pn-${i}" value="${esc(p.name||'')}"></div>
+          <div class="field"><label>Cal target</label><input id="pc-${i}" type="number" value="${p.calTarget||2400}"></div>
+          <div class="field"><label>Protein target</label><input id="pp-${i}" type="number" value="${p.proTarget||180}"></div>
+          <div class="field"><label>Goal wt</label><input id="pg-${i}" type="number" step="0.1" value="${p.goalWeight||''}"></div>
+          <div class="field"><label>Streak</label><input id="ps-${i}" type="number" value="${s.streak||0}"></div>
+          <button class="btn small" onclick="saveMember(${i})">Save</button>
+          <button class="btn danger small" onclick="delMember(${i})">Delete</button>
+        </div>
+        <div class="sect">Workout Log (${wos.length})</div>
+        ${wos.slice(0,15).map(wo=>`
+          <div class="wlog"><b>${esc(wo.type)}</b> — ${wo.dur} min${wo.vol?' · '+wo.setsDone+' sets · '+wo.vol.toLocaleString()+' lb':''}
+            <small>${esc(wo.when||'')}</small>
+            ${wo.detail?`<div class="sets">${wo.detail.map(d=>esc(d.name)+': '+d.sets.map(x=>x.w+'×'+x.r).join(', ')).join('<br>')}</div>`:''}
+          </div>`).join('') || '<div class="muted">Nothing logged yet.</div>'}
+        <div class="sect">Weights</div>
+        ${(s.weights||[]).slice(-10).map(x=>`<span class="pill"><b>${x}</b> lbs</span>`).join('')||'<span class="muted">None.</span>'}
+        <div class="sect">Recent Meals</div>
+        ${(s.meals||[]).slice(-10).reverse().map(x=>`<span class="pill"><b>${esc(x.name)}</b> ${x.cal} kcal · ${x.pro}g${x.date?' · '+x.date:''}</span>`).join('')||'<span class="muted">None.</span>'}
+        <div class="sect">Stack</div>
+        ${(s.stack||[]).map(x=>`<span class="pill"><b>${esc(x.name)}</b> ${esc(x.dose)}</span>`).join('')||'<span class="muted">Empty.</span>'}
+        <div class="muted" style="margin-top:12px;">Device ID: ${m.id}</div>
+      </div>
+    </div>`;
+  }).join('') : '<div class="card muted">No members yet — data appears here after someone uses the app (next version of the app syncs automatically).</div>';
+}
+async function saveMember(i){
+  const m=MEMBERS[i]; const s=m.state;
+  s.profile=s.profile||{};
+  s.profile.name=$('pn-'+i).value.trim()||s.profile.name;
+  s.profile.calTarget=+$('pc-'+i).value||2400;
+  s.profile.proTarget=+$('pp-'+i).value||180;
+  s.profile.goalWeight=+$('pg-'+i).value||null;
+  s.streak=+$('ps-'+i).value||0;
+  s.updatedAt=Date.now();
+  await api('/api/admin-user',{method:'PUT',body:JSON.stringify({id:m.id,state:s})});
+  toast((s.profile.name||'Member')+' updated ✓');
+  loadMembers();
+}
+async function delMember(i){
+  const m=MEMBERS[i];
+  if(!confirm('Delete '+((m.state.profile||{}).name||m.id)+' from the server? Their device copy stays, but syncing starts fresh.')) return;
+  await api('/api/admin-user?id='+m.id,{method:'DELETE'});
+  toast('Member removed');
+  loadMembers();
+}
+
+/* ---------- program builder ---------- */
+let PB=null;
+function showTab(t){
+  $('tab-members').style.display = t==='members'?'block':'none';
+  $('tab-program').style.display = t==='program'?'block':'none';
+  $('tb-members').classList.toggle('on',t==='members');
+  $('tb-program').classList.toggle('on',t==='program');
+}
+async function loadProgram(){
+  try{
+    const r=await fetch('/api/program');
+    if(r.ok){ const d=await r.json(); PB=d.days; $('progstatus').textContent='Custom program live (pushed '+fmtDate(d.pushed)+')'; }
+    else { PB=JSON.parse(JSON.stringify(DEFPROG)); $('progstatus').textContent='App is running the built-in PPL default'; }
+  }catch(e){ PB=JSON.parse(JSON.stringify(DEFPROG)); $('progstatus').textContent='Offline — editing default'; }
+  renderBuilder();
+}
+function loadDefaultProgram(){ PB=JSON.parse(JSON.stringify(DEFPROG)); renderBuilder(); toast('Loaded PPL default into editor'); }
+function renderBuilder(){
+  $('builder').innerHTML = PB.map((d,di)=>`
+    <div class="pday">
+      <div class="pday-h">
+        <div style="font-weight:900;font-size:15px;align-self:center;">Day ${di+1}</div>
+        <div class="field"><label>Session name</label><input value="${esc(d.name)}" onchange="PB[${di}].name=this.value"></div>
+        <div class="field" style="flex:2;"><label>Subtitle</label><input value="${esc(d.sub)}" onchange="PB[${di}].sub=this.value"></div>
+        <div class="field"><label>Big lift (or blank)</label><input value="${esc(d.big||'')}" onchange="PB[${di}].big=this.value||null"></div>
+      </div>
+      <div class="pday-b">
+        ${d.ex.map((e,ei)=>`
+          <div class="exline">
+            <input class="nm" list="exdl" value="${esc(e[0])}" onchange="PB[${di}].ex[${ei}][0]=this.value">
+            <input class="tg" value="${esc(e[1])}" placeholder="3 × 8–10" onchange="PB[${di}].ex[${ei}][1]=this.value">
+            <input class="rs" value="${esc(e[2])}" placeholder="90 s" onchange="PB[${di}].ex[${ei}][2]=this.value">
+            <div class="bigck"><input type="checkbox" ${e[3]?'checked':''} onchange="PB[${di}].ex[${ei}][3]=this.checked?1:0"> HEAVY</div>
+            <button class="icobtn" onclick="moveEx(${di},${ei},-1)">↑</button>
+            <button class="icobtn" onclick="moveEx(${di},${ei},1)">↓</button>
+            <button class="icobtn" onclick="PB[${di}].ex.splice(${ei},1);renderBuilder()">✕</button>
+          </div>`).join('')}
+        <div class="exline">
+          <input class="nm" list="exdl" id="add-${di}" placeholder="Add exercise — type to search the ${EXDB.length}-exercise library, or enter anything custom">
+          <button class="btn ghost small" onclick="addEx(${di})">+ Add</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+function moveEx(di,ei,dir){
+  const arr=PB[di].ex; const j=ei+dir;
+  if(j<0||j>=arr.length) return;
+  [arr[ei],arr[j]]=[arr[j],arr[ei]];
+  renderBuilder();
+}
+function addEx(di){
+  const v=$('add-'+di).value.trim();
+  if(!v) return;
+  PB[di].ex.push([v,'3 × 8–12','90 s']);
+  renderBuilder();
+}
+async function pushProgram(){
+  for(const d of PB){ if(!d.name.trim()) return toast('Every day needs a name'); }
+  if(!confirm('Push this program to everyone? Members get it next time they open the app.')) return;
+  const r=await api('/api/program',{method:'PUT',body:JSON.stringify({days:PB})});
+  const d=await r.json();
+  if(d.ok){ toast('Program pushed to the app 🚀'); $('progstatus').textContent='Custom program live (pushed just now)'; }
+  else toast('Push failed: '+(d.error||'unknown'));
+}
+
+/* ---------- boot ---------- */
+if(KEY()){ fetch('/api/users',{headers:{'x-admin-key':KEY()}}).then(r=>{ if(r.ok) boot(); else sessionStorage.removeItem('scAdminKey'); }); }
+</script>
+</body>
+</html>
