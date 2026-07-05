@@ -379,9 +379,9 @@
       <div id="train-active" style="display:none;"></div>
       <div id="train-normal">
       <div class="hero" style="margin-top:8px;">
-        <div class="hi">Current streak</div>
-        <div class="big"><em id="t-streak">0 days</em> 🔥</div>
-        <div style="color:var(--muted);font-size:13px;margin-top:6px;" id="t-week">0 workouts this week</div>
+        <div class="hi" id="t-today-label">Today's workout</div>
+        <div class="big"><em id="t-today">—</em></div>
+        <div style="color:var(--muted);font-size:13px;margin-top:6px;" id="t-today-sub"></div>
       </div>
       <h2 class="section">This Week</h2>
       <div class="card">
@@ -932,8 +932,12 @@ function renderTrain(){
   }
   $('train-normal').style.display='block';
   $('train-active').style.display='none';
-  $('t-streak').textContent = S.streak+' days';
-  $('t-week').textContent = S.workouts.length+' sessions logged';
+  const ti = todaysDay(), tp = PROGRAM[ti];
+  const scheduled = S.schedule && S.schedule[todayISO()]!=null;
+  const doneToday = S.workouts.some(w=>w.date===todayISO() && w.day===ti);
+  $('t-today-label').textContent = doneToday ? 'Done today' : (scheduled ? 'Scheduled for today' : "Today's workout");
+  $('t-today').textContent = tp.name;
+  $('t-today-sub').textContent = doneToday ? 'In the books. Recovery counts too.' : tp.sub + ' — it\'s queued up below.';
   renderWeek();
   renderProgram();
   const el = $('workout-list');
