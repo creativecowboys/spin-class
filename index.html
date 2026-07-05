@@ -304,7 +304,7 @@
 
   <header>
     <div class="logo">SPIN<span>CLASS</span></div>
-    <div class="avatar" id="avatar" onclick="if(S.profile)openModal('profile')" style="cursor:pointer;">DC</div>
+    <div class="avatar" id="avatar" onclick="if(S.profile)openModal('profile')" style="cursor:pointer;"></div>
   </header>
 
   <main id="main">
@@ -312,8 +312,8 @@
     <!-- ============ HOME ============ -->
     <section class="tab active" id="tab-home">
       <div class="hero">
-        <div class="hi" id="greet">Friday, July 3</div>
-        <div class="big">Let's get after it,<br><em id="hero-name">Dave.</em></div>
+        <div class="hi" id="greet"></div>
+        <div class="big">Let's get after it,<br><em id="hero-name"></em></div>
         <div class="statrow">
           <div class="stat cal"><div class="num" id="h-cals">0</div><div class="lbl">Cals</div></div>
           <div class="stat pro"><div class="num" id="h-pro">0g</div><div class="lbl">Protein</div></div>
@@ -525,7 +525,7 @@
       <div class="ob-sub">Targets set, first weigh-in logged. Time to put in the work.</div>
       <div class="ob-body"></div>
       <div class="ob-dots"><i></i><i></i><i></i><i class="on"></i></div>
-      <button class="btn" onclick="finishOnboard(false)">Let's Train</button>
+      <button class="btn" onclick="finishOnboard()">Let's Train</button>
     </div>
   </div>
 </div>
@@ -558,32 +558,29 @@ async function loadRemote(){
       const sr = await fetch('/api/sync?id='+S.id).then(r=>r.ok?r.json():null).catch(()=>null);
       if(sr && sr.state && (sr.updated||0) > (S.updatedAt||0)+2000){
         S = sr.state;
-        try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
+        if(scrubSeed()) store.save();
+        else try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
         personalize(); renderAll(); renderChat();
       }
     }
   }catch(e){}
 }
 
-const seed = {
-  meals: [
-    {name:'Eggs + oatmeal', cal:520, pro:34, emoji:'🍳', time:'7:40 AM'},
-    {name:'Chicken bowl', cal:680, pro:52, emoji:'🥗', time:'12:15 PM'},
-  ],
-  workouts: [
-    {type:'Push Day', dur:55, emoji:'🏋️', when:'Yesterday'},
-    {type:'5K Run', dur:28, emoji:'🏃', when:'Wednesday'},
-    {type:'Pull Day', dur:60, emoji:'🏋️', when:'Tuesday'},
-  ],
-  weights: [212.4, 211.8, 212.0, 211.1, 210.6, 210.9, 209.8],
-  streak: 4,
-  stack: [
-    {name:'BPC-157', dose:'250 mcg · subq', hour:7,  min:0,  taken:true},
-    {name:'Vitamin D3 + K2', dose:'5000 IU · oral', hour:8, min:0, taken:true},
-    {name:'Creatine', dose:'5 g · in shake', hour:13, min:0, taken:false},
-    {name:'CJC-1295', dose:'100 mcg · subq', hour:21, min:30, taken:false},
-  ],
-};
+/* one-time scrub: old demo mode wrote fake seed data (dateless meals/workouts,
+   canned weights/stack, fake streak) into real accounts — strip it wherever found */
+function scrubSeed(){
+  if(!S) return false;
+  const hadSeed = (S.meals||[]).some(m=>!m.date) || (S.workouts||[]).some(w=>!w.date);
+  if(!hadSeed) return false;
+  S.meals = (S.meals||[]).filter(m=>m.date);
+  S.workouts = (S.workouts||[]).filter(w=>w.date);
+  const sw = [212.4, 211.8, 212.0, 211.1, 210.6, 210.9, 209.8];
+  if((S.weights||[]).length >= sw.length && sw.every((v,i)=>S.weights[i]===v)) S.weights = S.weights.slice(sw.length);
+  const ss = [['BPC-157','250 mcg · subq'],['Vitamin D3 + K2','5000 IU · oral'],['Creatine','5 g · in shake'],['CJC-1295','100 mcg · subq']];
+  S.stack = (S.stack||[]).filter(x=>!ss.some(([n,d])=>x.name===n && x.dose===d));
+  S.streak = S.workouts.length;
+  return true;
+}
 
 /* =============== program: PPL Strength A/B (6-day) =============== */
 let PROGRAM = [
@@ -655,7 +652,8 @@ const EXDB=[["Band Concentration Curl","Band","Biceps"],["Band Curl","Band","Bic
 
 let S = store.load();
 const needsOnboard = !S || !S.profile;
-if(!S) S = JSON.parse(JSON.stringify(seed));
+if(!S) S = {meals:[], workouts:[], weights:[], streak:0, stack:[]};
+if(scrubSeed()) try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
 const P = () => S.profile || {name:'Dave', calTarget:2400, proTarget:180, goalWeight:null};
 
 /* =============== helpers =============== */
@@ -1257,16 +1255,14 @@ function saveCompound(){
   store.save(); renderAll(); closeModal(); toast(name+' added to stack ✓');
 }
 
-/* =============== mock coach =============== */
-/* In the real app this becomes a fetch() to your backend, which calls the Claude API
-   with the user's data as context. Everything below is a stand-in. */
+/* =============== offline coach fallback (used only when the API is unreachable) =============== */
 function coachReply(q){
   const {cal,pro} = totals();
   const p = P();
   const remaining = Math.max(0, p.calTarget-cal), proLeft = Math.max(0, p.proTarget-pro);
   const due = S.stack.filter(x=>!x.taken);
-  const cur = S.weights[S.weights.length-1];
-  const delta = (cur - S.weights[0]).toFixed(1);
+  const cur = S.weights.length ? S.weights[S.weights.length-1] : 0;
+  const delta = (cur - (S.weights[0]||cur)).toFixed(1);
   const t = q.toLowerCase();
 
   if(t.includes('dinner')||t.includes('eat')||t.includes('meal')||t.includes('food'))
@@ -1282,7 +1278,7 @@ function coachReply(q){
   }
   if(t.includes('how am i')||t.includes('doing')||t.includes('progress')||t.includes('weight'))
     return `Strong week, ${esc(p.name)}. Weight's moved <b>${delta} lbs</b> (now ${cur.toFixed(1)}${p.goalWeight?', goal '+p.goalWeight:''}), you're at <b>${cal}/${p.calTarget} kcal</b> and <b>${pro}/${p.proTarget}g protein</b> today, and the streak is <b>${S.streak} days</b>. ${proLeft>60?'Protein is the one lagging — attack it at dinner.':'Keep doing exactly this.'}`;
-  return `Got it. In the full version I'll actually be Claude — with live context on your meals (${cal} kcal so far), training streak (${S.streak} days), weight trend, and stack schedule. Ask me about dinner, your stack, or tomorrow's session to see the demo answers.`;
+  return `Can't reach coach HQ right now, so you're getting the canned version of me. What I can tell you: you're at <b>${cal} kcal</b> today and the streak is <b>${S.streak}</b>. Ask about dinner, your stack, or tomorrow's session — or try again in a minute for the real answers.`;
 }
 
 function ask(q){ $('chat-in').value=q; send(); }
@@ -1388,24 +1384,20 @@ async function adoptAccount(id){
   if(!doc || !doc.state) return toast('Couldn\'t load that account — try again');
   S = doc.state;
   S.id = id;
+  scrubSeed();
   store.save();
   personalize(); renderAll(); renderChat(); loadCommunity();
   $('onboard').classList.remove('open');
   toast('Welcome back, '+P().name+'! 💪');
   if(!S.pin) setTimeout(()=>{ openModal('profile'); toast('Lock it in — set a 4-digit PIN 🔐'); }, 1500);
 }
-function finishOnboard(demo){
+function finishOnboard(){
   const name=$('ob-name').value.trim() || 'Athlete';
   const w=+$('ob-w').value || 200;
   const gw=+$('ob-gw').value || null;
   const cal=+$('ob-cal').value || 2400;
   const pro=+$('ob-pro').value || 180;
-  if(demo){
-    S = JSON.parse(JSON.stringify(seed));
-    S.weights.push(w);
-  } else {
-    S = {meals:[], workouts:[], weights:[w], streak:0, stack:[]};
-  }
+  S = {meals:[], workouts:[], weights:[w], streak:0, stack:[]};
   S.profile = {name, goalWeight:gw, calTarget:cal, proTarget:pro};
   S.pin = $('ob-pin').value.replace(/\D/g,'');
   S.id = randId();
