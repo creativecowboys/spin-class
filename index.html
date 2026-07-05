@@ -205,6 +205,7 @@
   .tc-msg b{display:block;color:var(--accent3);font-size:11.5px;margin-bottom:2px;}
   .tc-msg.me b{color:var(--accent);}
   .tc-msg b span{color:var(--muted);font-weight:400;font-size:10px;margin-left:6px;}
+  .tc-msg b i{color:var(--muted);font-style:normal;font-size:14px;margin-left:8px;cursor:pointer;}
   /* ---------- program ---------- */
   .pday{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;}
   .pday.today{border-color:rgba(204,255,0,.5);}
@@ -363,8 +364,16 @@
         <button class="btn ghost small" style="margin-top:12px;" onclick="openModal('profile')">Edit Profile · PIN · Weight Trend</button>
       </div>
 
-      <h2 class="section">Meals Today · <span id="m-total">0 kcal · 0g protein</span></h2>
-      <div class="card" id="meal-list"><div class="empty">Nothing logged yet. Fuel up. 🍳</div></div>
+      <h2 class="section">Meals</h2>
+      <div class="card">
+        <div class="wknav">
+          <button onclick="mealDayShift(-1)">‹</button>
+          <b id="meal-day-label">Today</b>
+          <button onclick="mealDayShift(1)">›</button>
+        </div>
+        <div style="color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.3px;margin-bottom:10px;" id="m-total">0 kcal · 0P · 0C · 0F</div>
+        <div id="meal-list"><div class="empty">Nothing logged. Fuel up. 🍳</div></div>
+      </div>
       <button class="btn" onclick="openModal('meal')">+ Log a Meal</button>
 
       <h2 class="section">Stack · Today's Schedule</h2>
@@ -409,7 +418,7 @@
       <div class="card" style="padding:12px 14px;">
         <div id="tchat-msgs" style="max-height:260px;overflow-y:auto;"><div class="empty">Loading…</div></div>
         <div class="inputrow" style="padding-bottom:0;">
-          <input id="tchat-in" maxlength="300" placeholder="Say something to the crew…" onkeydown="if(event.key==='Enter')sendTeamMsg()">
+          <input id="tchat-in" maxlength="300" placeholder="Message the crew…" onkeydown="if(event.key==='Enter')sendTeamMsg()">
           <button onclick="sendTeamMsg()">↑</button>
         </div>
       </div>
@@ -687,6 +696,7 @@ function go(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
   $('main').scrollTop=0;
   if(t==='team') loadCommunity();
+  if(t==='profile'){ mealDay=null; renderMeals(); }
 }
 
 /* =============== render =============== */
@@ -826,12 +836,22 @@ function tcTime(at){
 function renderTeamChat(){
   const el = $('tchat-msgs'); if(!el) return;
   const chat = (COMM && COMM.chat) || [];
-  el.innerHTML = chat.length ? chat.map(m=>`
-    <div class="tc-msg${m.k===(COMM&&COMM.you)?' me':''}">
-      <b>${m.k===(COMM&&COMM.you)?'You':esc(m.n)} <span>${tcTime(m.at)}</span></b>
+  el.innerHTML = chat.length ? chat.map(m=>{
+    const mine = m.k===(COMM&&COMM.you);
+    return `<div class="tc-msg${mine?' me':''}">
+      <b>${mine?'You':esc(m.n)} <span>${tcTime(m.at)}</span>${mine?`<i onclick="delTeamMsg(${m.at})">×</i>`:''}</b>
       <div>${esc(m.t)}</div>
-    </div>`).join('') : '<div class="empty">Nothing yet. Talk your talk. 🗣</div>';
+    </div>`;
+  }).join('') : '<div class="empty">No messages yet.</div>';
   el.scrollTop = el.scrollHeight;
+}
+async function delTeamMsg(at){
+  if(!confirm('Delete this message?')) return;
+  try{
+    const r = await fetch('/api/community',{method:'POST',headers:{'content-type':'application/json'},
+      body: JSON.stringify({id:S.id, delAt:at})});
+    if(r.ok){ if(COMM) COMM.chat=(await r.json()).chat||[]; renderTeamChat(); }
+  }catch(e){}
 }
 async function sendTeamMsg(){
   const inp = $('tchat-in');
@@ -850,17 +870,37 @@ setInterval(()=>{
   if(t && t.classList.contains('active') && !document.hidden) loadCommunity();
 }, 25000);
 
+let mealDay = null; // ISO of the day the Meals list is showing; null = today
+function curMealDay(){ return mealDay || todayISO(); }
+function mealDayOf(m){ return m.date || todayISO(); } // legacy dateless meals = today
+function mealDayShift(n){
+  const d = new Date(curMealDay()+'T00:00:00');
+  d.setDate(d.getDate()+n);
+  mealDay = isoOf(d);
+  renderMeals();
+}
+function dayTotals(iso){
+  const list = S.meals.filter(m=>mealDayOf(m)===iso);
+  return {
+    cal:list.reduce((a,m)=>a+(m.cal||0),0), pro:list.reduce((a,m)=>a+(m.pro||0),0),
+    carb:list.reduce((a,m)=>a+(m.carb||0),0), fat:list.reduce((a,m)=>a+(m.fat||0),0)
+  };
+}
 function renderMeals(){
-  const {cal,pro,carb,fat} = totals();
-  $('m-total').textContent = cal+' kcal · '+pro+'P · '+carb+'C · '+fat+'F';
+  const iso = curMealDay(), today = todayISO();
+  const t = dayTotals(iso);
+  $('m-total').textContent = t.cal+' kcal · '+t.pro+'P · '+t.carb+'C · '+t.fat+'F';
+  const lbl = $('meal-day-label');
+  if(lbl) lbl.textContent = iso===today ? 'Today'
+    : new Date(iso+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
   const el = $('meal-list');
-  const todays = mealsToday();
-  el.innerHTML = todays.length ? todays.map((m,i)=>`
-    <div class="item">
-      <div class="emoji">${m.emoji}</div>
-      <div class="info"><b>${esc(m.name)}</b><small>${m.time}</small></div>
+  const rows = S.meals.map((m,idx)=>({m,idx})).filter(x=>mealDayOf(x.m)===iso);
+  el.innerHTML = rows.length ? rows.map(({m,idx})=>`
+    <div class="item" onclick="openModal('meal',${idx})" style="cursor:pointer;">
+      <div class="emoji">${m.emoji||'🍽'}</div>
+      <div class="info"><b>${esc(m.name)}</b><small>${esc(m.time||'')}</small></div>
       <div class="val">${m.cal}<small>KCAL · ${m.pro}P · ${m.carb||0}C · ${m.fat||0}F</small></div>
-    </div>`).join('') : '<div class="empty">Nothing logged yet. Fuel up. 🍳</div>';
+    </div>`).join('') : '<div class="empty">Nothing logged. Fuel up. 🍳</div>';
 }
 
 /* =============== week calendar =============== */
@@ -1199,20 +1239,27 @@ function renderAll(){ renderHome(); renderMeals(); renderTrain(); renderStack();
 }
 
 /* =============== modals =============== */
-function openModal(kind){
+function openModal(kind, arg){
   const sheet = $('sheet');
-  if(kind==='meal') sheet.innerHTML = `
-    <h3>Log a Meal</h3>
-    <div class="field"><label>What did you eat?</label><input id="f-name" placeholder="e.g. Steak + rice"></div>
+  if(kind==='meal'){
+    const editing = (arg!=null && S.meals[arg]);
+    const m = editing ? S.meals[arg] : null;
+    const dflt = editing ? mealDayOf(m) : curMealDay();
+    sheet.innerHTML = `
+    <h3>${editing?'Edit Meal':'Log a Meal'}</h3>
+    <div class="field"><label>What did you eat?</label><input id="f-name" placeholder="e.g. Steak + rice" value="${editing?esc(m.name):''}"></div>
     <div class="fieldrow">
-      <div class="field"><label>Calories</label><input id="f-cal" type="number" placeholder="650"></div>
-      <div class="field"><label>Protein (g)</label><input id="f-pro" type="number" placeholder="45"></div>
+      <div class="field"><label>Calories</label><input id="f-cal" type="number" placeholder="650" value="${editing?(m.cal||''):''}"></div>
+      <div class="field"><label>Protein (g)</label><input id="f-pro" type="number" placeholder="45" value="${editing?(m.pro||''):''}"></div>
     </div>
     <div class="fieldrow">
-      <div class="field"><label>Carbs (g)</label><input id="f-carb" type="number" placeholder="60"></div>
-      <div class="field"><label>Fats (g)</label><input id="f-fat" type="number" placeholder="20"></div>
+      <div class="field"><label>Carbs (g)</label><input id="f-carb" type="number" placeholder="60" value="${editing?(m.carb||''):''}"></div>
+      <div class="field"><label>Fats (g)</label><input id="f-fat" type="number" placeholder="20" value="${editing?(m.fat||''):''}"></div>
     </div>
-    <button class="btn" onclick="saveMeal()">Save Meal</button>`;
+    <div class="field"><label>Date</label><input id="f-mdate" type="date" value="${dflt}"></div>
+    <button class="btn" onclick="saveMeal(${editing?arg:'null'})">${editing?'Save Changes':'Save Meal'}</button>
+    ${editing?`<button class="btn ghost" style="margin-top:10px;color:var(--accent2);border-color:var(--accent2);" onclick="deleteMeal(${arg})">Delete Meal</button>`:''}`;
+  }
   if(kind==='workout') sheet.innerHTML = `
     <h3>Log a Workout</h3>
     <div class="field"><label>Type</label><input id="f-type" placeholder="e.g. Leg Day, 5K Run"></div>
@@ -1257,12 +1304,27 @@ function openModal(kind){
 }
 function closeModal(){ $('modal').classList.remove('open'); }
 
-function saveMeal(){
+function saveMeal(editIndex){
   const name=$('f-name').value.trim(), cal=+$('f-cal').value||0, pro=+$('f-pro').value||0;
   const carb=+$('f-carb').value||0, fat=+$('f-fat').value||0;
+  const date=$('f-mdate').value || todayISO();
   if(!name) return toast('Name it first!');
-  S.meals.push({name, cal, pro, carb, fat, emoji:'🍽', time:nowStr(), date:todayISO()});
-  store.save(); renderAll(); closeModal(); toast('Meal logged ✓');
+  if(editIndex!=null && S.meals[editIndex]){
+    const m=S.meals[editIndex];
+    m.name=name; m.cal=cal; m.pro=pro; m.carb=carb; m.fat=fat; m.date=date;
+    toast('Meal updated ✓');
+  } else {
+    S.meals.push({name, cal, pro, carb, fat, emoji:'🍽', time:nowStr(), date});
+    toast('Meal logged ✓');
+  }
+  mealDay=date; // show the day we just touched
+  store.save(); renderAll(); closeModal();
+}
+function deleteMeal(index){
+  if(index==null || !S.meals[index]) return;
+  if(!confirm('Delete this meal?')) return;
+  S.meals.splice(index,1);
+  store.save(); renderAll(); closeModal(); toast('Meal deleted');
 }
 function saveWorkout(){
   const type=$('f-type').value.trim(), dur=+$('f-dur').value||0;

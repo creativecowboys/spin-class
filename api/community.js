@@ -47,15 +47,23 @@ export default async function handler(req, res) {
       return res.status(200).json({ you: mkey(id), members, chat });
     }
     if (req.method === 'POST') {
-      const { id, text } = req.body || {};
+      const { id, text, delAt } = req.body || {};
       const clean = String(id || '').replace(/[^a-f0-9]/gi, '');
-      const msg = String(text || '').trim().slice(0, 300);
-      if (!clean || !msg) return res.status(400).json({ error: 'id and text required' });
+      if (!clean) return res.status(400).json({ error: 'id required' });
       const me = await readBlob(`users/${clean}.json`);
       if (!me || !me.state || !me.state.profile) return res.status(403).json({ error: 'unknown member' });
+      const myKey = mkey(clean);
       const chat = (await readBlob('config/teamchat.json')) || [];
-      chat.push({ k: mkey(clean), n: me.state.profile.name || 'Someone', t: msg, at: Date.now() });
-      while (chat.length > 100) chat.shift();
+      if (delAt) {
+        // members can delete only their own messages
+        const i = chat.findIndex(m => m.at === delAt && m.k === myKey);
+        if (i >= 0) chat.splice(i, 1);
+      } else {
+        const msg = String(text || '').trim().slice(0, 300);
+        if (!msg) return res.status(400).json({ error: 'text required' });
+        chat.push({ k: myKey, n: me.state.profile.name || 'Someone', t: msg, at: Date.now() });
+        while (chat.length > 100) chat.shift();
+      }
       await put('config/teamchat.json', JSON.stringify(chat), {
         access: 'public', addRandomSuffix: false, allowOverwrite: true,
         contentType: 'application/json', cacheControlMaxAge: 0
