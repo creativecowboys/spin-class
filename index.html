@@ -182,6 +182,30 @@
   }
   .toast.show{transform:translateX(-50%) translateY(0);}
   .empty{color:var(--muted);font-size:13.5px;text-align:center;padding:18px 8px;}
+
+  /* ---------- team / community ---------- */
+  .tw-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
+  .tw-row:last-of-type{border-bottom:none;}
+  .tw-av{width:34px;height:34px;border-radius:50%;background:var(--surface2);color:var(--accent);font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;flex:none;}
+  .tw-row.hot .tw-av{background:rgba(204,255,0,.14);}
+  .tw-info{flex:1;min-width:0;}
+  .tw-info b{font-size:13.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .tw-info small{color:var(--muted);font-size:11px;}
+  .tw-dots{display:flex;gap:3px;flex:none;}
+  .tw-dot{width:7px;height:7px;border-radius:50%;background:var(--border);display:block;}
+  .tw-dot.on{background:var(--accent);}
+  .tw-dot.today{outline:1px solid rgba(204,255,0,.5);outline-offset:1px;}
+  .tw-streak{font-size:12px;font-weight:800;width:36px;text-align:right;flex:none;}
+  .tw-more{color:var(--muted);font-size:11.5px;text-align:center;padding-top:10px;}
+  .feed-item{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px;}
+  .feed-item .info{flex:1;min-width:0;}
+  .feed-item .info b{font-size:13.5px;}
+  .feed-item .info small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;}
+  .feed-item .info small.bumpnames{color:var(--accent);font-size:10.5px;}
+  .bump{flex:none;background:var(--surface2);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:7px 10px;font-size:15px;cursor:pointer;display:flex;align-items:center;gap:4px;}
+  .bump span{font-size:11px;font-weight:800;color:var(--muted);}
+  .bump.on{border-color:var(--accent);background:rgba(204,255,0,.1);}
+  .bump.on span{color:var(--accent);}
   /* ---------- program ---------- */
   .pday{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;}
   .pday.today{border-color:rgba(204,255,0,.5);}
@@ -321,14 +345,9 @@
         </div>
       </div>
 
-      <h2 class="section">Weight Trend</h2>
-      <div class="card">
-        <div class="chart-meta">
-          <div class="w"><span id="w-now">—</span> <small>lbs</small></div>
-          <div class="delta" id="w-delta"></div>
-        </div>
-        <div class="chartwrap"><svg class="chart" id="wchart" viewBox="0 0 340 130" preserveAspectRatio="none"></svg></div>
-        <button class="btn ghost small" style="margin-top:12px;" onclick="openModal('weight')">+ Log Weight</button>
+      <h2 class="section">Team This Week</h2>
+      <div class="card" id="team-week" onclick="go('team')" style="cursor:pointer;">
+        <div class="empty">Loading the crew…</div>
       </div>
 
       <h2 class="section">Coach Check-in</h2>
@@ -384,6 +403,12 @@
       <p class="tagline">⚠️ SPIN CLASS only reminds you of the schedule <b>you</b> enter — it never suggests compounds or doses. Set your protocol with your provider.</p>
     </section>
 
+    <!-- ============ TEAM ============ -->
+    <section class="tab" id="tab-team">
+      <h2 class="section" style="margin-top:4px;">The Crew</h2>
+      <div id="team-feed"><div class="empty">Loading…</div></div>
+    </section>
+
     <!-- ============ CHAT ============ -->
     <section class="tab" id="tab-chat">
       <div class="chatwrap">
@@ -417,6 +442,9 @@
     <button data-t="train" onclick="go('train')">
       <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h3"/><path d="M19 12h3"/><path d="M5 8v8"/><path d="M9 6v12"/><path d="M15 6v12"/><path d="M19 8v8"/><path d="M9 12h6"/></svg>
       Train</button>
+    <button data-t="team" onclick="go('team')">
+      <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      Team</button>
     <button data-t="stack" onclick="go('stack')">
       <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 7 6 11a6 6 0 01-12 0c0-4 6-11 6-11z"/></svg>
       Stack</button>
@@ -645,6 +673,7 @@ function go(t){
   $('tab-'+t).classList.add('active');
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
   $('main').scrollTop=0;
+  if(t==='team') loadCommunity();
 }
 
 /* =============== render =============== */
@@ -685,16 +714,6 @@ function renderHome(){
     $('dosealert').style.display='none';
   }
 
-  // weight chart
-  const w = S.weights;
-  const cur = w[w.length-1];
-  $('w-now').textContent = cur.toFixed(1);
-  const delta = cur - w[0];
-  $('w-delta').textContent = (delta<=0?'▼ ':'▲ ')+Math.abs(delta).toFixed(1)+' lbs'
-    + (p.goalWeight ? ' · goal '+p.goalWeight : '');
-  $('w-delta').style.color = delta<=0 ? 'var(--accent)' : 'var(--accent2)';
-  drawChart(w);
-
   // check-in
   const remaining = Math.max(0, p.calTarget-cal);
   const proLeft = Math.max(0, p.proTarget-pro);
@@ -720,6 +739,86 @@ function drawChart(w){
      <path d="${area}" fill="url(#g)"/>
      <path d="${path}" fill="none" stroke="#ccff00" stroke-width="2.5" stroke-linecap="round"/>` +
     w.map((v,i)=>`<circle cx="${X(i)}" cy="${Y(v)}" r="${i===w.length-1?4.5:2.5}" fill="${i===w.length-1?'#ccff00':'#555'}"/>`).join('');
+}
+
+function renderWeightPanel(){
+  const w = S.weights || [];
+  if(!w.length){ $('w-now').textContent='—'; $('w-delta').textContent='no weigh-ins yet'; return; }
+  const cur = w[w.length-1];
+  $('w-now').textContent = cur.toFixed(1);
+  const delta = cur - w[0];
+  const p = P();
+  $('w-delta').textContent = (delta<=0?'▼ ':'▲ ')+Math.abs(delta).toFixed(1)+' lbs'
+    + (p.goalWeight ? ' · goal '+p.goalWeight : '');
+  $('w-delta').style.color = delta<=0 ? 'var(--accent)' : 'var(--accent2)';
+  drawChart(w);
+}
+
+/* =============== team / community =============== */
+let COMM = null, FEED = [];
+async function loadCommunity(){
+  if(!S || !S.id || !S.profile) return;
+  try{
+    const r = await fetch('/api/community?id='+S.id);
+    if(!r.ok) return;
+    COMM = await r.json();
+    renderTeamWeek(); renderTeamFeed();
+  }catch(e){}
+}
+function teamWeekISO(){
+  const d = new Date(); const mon = new Date(d);
+  mon.setDate(d.getDate() - ((d.getDay()+6)%7));
+  return Array.from({length:7},(_,i)=>{ const x=new Date(mon); x.setDate(mon.getDate()+i);
+    return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); });
+}
+function renderTeamWeek(){
+  const el = $('team-week'); if(!el) return;
+  if(!COMM || !COMM.members || !COMM.members.length){ el.innerHTML='<div class="empty">No crew activity yet.</div>'; return; }
+  const wk = teamWeekISO(), today = todayISO();
+  el.innerHTML = [...COMM.members].sort((a,b)=>b.lastActive-a.lastActive).map(m=>{
+    const days = new Set(m.workouts.map(w=>w.date));
+    const hot = days.has(today);
+    const dots = wk.map(d=>`<i class="tw-dot${days.has(d)?' on':''}${d===today?' today':''}"></i>`).join('');
+    const sub = hot ? 'trained today 💪' : (m.workouts[0] ? 'last: '+esc(m.workouts[0].type) : 'no workouts yet');
+    return `<div class="tw-row${hot?' hot':''}">
+      <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
+      <div class="tw-info"><b>${esc(m.name)}${m.key===COMM.you?' <small>(you)</small>':''}</b><small>${sub}</small></div>
+      <div class="tw-dots">${dots}</div>
+      <div class="tw-streak">${m.streak}🔥</div>
+    </div>`;
+  }).join('') + '<div class="tw-more">See the full feed →</div>';
+}
+function renderTeamFeed(){
+  const el = $('team-feed'); if(!el) return;
+  if(!COMM){ el.innerHTML='<div class="empty">Can\'t reach the crew right now.</div>'; return; }
+  const items = [];
+  COMM.members.forEach(m=>m.workouts.forEach((w,idx)=>items.push({m,w,idx})));
+  items.sort((a,b)=>(b.w.date||'').localeCompare(a.w.date||'') || a.idx-b.idx);
+  FEED = [];
+  el.innerHTML = items.slice(0,40).map(({m,w},i)=>{
+    FEED[i] = { target:m.key, when:w.when||w.date };
+    const bl = (COMM.bumps && COMM.bumps[m.key+'|'+(w.when||w.date)]) || [];
+    const mine = bl.some(b=>b.k===COMM.you);
+    const stats = [w.dur?w.dur+' min':'', w.sets?w.sets+' sets':'', w.vol?w.vol.toLocaleString()+' lb':''].filter(Boolean).join(' · ');
+    return `<div class="feed-item">
+      <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
+      <div class="info"><b>${esc(m.name)} — ${esc(w.type)}</b><small>${esc(stats||'logged')}${w.when?' · '+esc(w.when):''}</small>
+        ${bl.length?`<small class="bumpnames">🤜 ${bl.map(b=>esc(b.n)).join(', ')}</small>`:''}</div>
+      ${m.key===COMM.you
+        ? (bl.length?`<div class="bump on" style="cursor:default;">🤜<span>${bl.length}</span></div>`:'')
+        : `<button class="bump${mine?' on':''}" onclick="bump(${i},this)">🤜<span>${bl.length||''}</span></button>`}
+    </div>`;
+  }).join('') || '<div class="empty">Nobody\'s trained yet. Someone go first. 🏋️</div>';
+}
+async function bump(i, btn){
+  const f = FEED[i]; if(!f || !COMM) return;
+  btn.disabled = true;
+  try{
+    const r = await fetch('/api/community',{method:'POST',headers:{'content-type':'application/json'},
+      body: JSON.stringify({id:S.id, target:f.target, when:f.when})});
+    if(r.ok){ COMM.bumps[f.target+'|'+f.when] = (await r.json()).bumps || []; renderTeamFeed(); }
+    else btn.disabled = false;
+  }catch(e){ btn.disabled = false; }
 }
 
 function renderMeals(){
@@ -1095,7 +1194,15 @@ function openModal(kind){
     </div>
     <div class="field"><label>Goal weight (lbs)</label><input id="f-pgw" type="number" step="0.1" value="${p.goalWeight||''}"></div>
     <div class="field"><label>4-digit PIN — your name + PIN logs you in on any device</label><input id="f-ppin" type="tel" inputmode="numeric" maxlength="4" value="${esc(String(S.pin||''))}" placeholder="e.g. 4242" autocomplete="off"></div>
+    <div class="field" style="margin-bottom:6px;"><label>Weight trend — only you & your coach see this</label></div>
+    <div class="chart-meta">
+      <div class="w"><span id="w-now">—</span> <small>lbs</small></div>
+      <div class="delta" id="w-delta"></div>
+    </div>
+    <div class="chartwrap"><svg class="chart" id="wchart" viewBox="0 0 340 130" preserveAspectRatio="none"></svg></div>
+    <button class="btn ghost small" style="margin:10px 0 16px;" onclick="openModal('weight')">+ Log Weight</button>
     <button class="btn" onclick="saveProfile()">Save</button>`;
+    renderWeightPanel();
   }
   if(kind==='compound') sheet.innerHTML = `
     <h3>Add to Stack</h3>
@@ -1282,7 +1389,7 @@ async function adoptAccount(id){
   S = doc.state;
   S.id = id;
   store.save();
-  personalize(); renderAll(); renderChat();
+  personalize(); renderAll(); renderChat(); loadCommunity();
   $('onboard').classList.remove('open');
   toast('Welcome back, '+P().name+'! 💪');
   if(!S.pin) setTimeout(()=>{ openModal('profile'); toast('Lock it in — set a 4-digit PIN 🔐'); }, 1500);
@@ -1304,6 +1411,7 @@ function finishOnboard(demo){
   S.id = randId();
   store.save();
   personalize(); renderAll();
+  setTimeout(loadCommunity, 2600); // first sync must land server-side before the feed will know us
   $('onboard').classList.remove('open');
   toast('Welcome to SPIN CLASS, '+name+'! 🎉');
 }
@@ -1321,7 +1429,7 @@ personalize();
 renderAll();
 renderChat();
 if(needsOnboard) $('onboard').classList.add('open');
-loadRemote().then(()=>{ if(S && S.id && S.profile) schedSync(); });
+loadRemote().then(()=>{ if(S && S.id && S.profile) schedSync(); loadCommunity(); });
 </script>
 </body>
 </html>
