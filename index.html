@@ -213,6 +213,7 @@
   .feed-item .info{flex:1;min-width:0;}
   .feed-item .info b{font-size:13.5px;}
   .feed-item .info small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;}
+  .feed-item .info small b.wtype{color:var(--accent);font-weight:800;}
   .tc-msg{margin-bottom:10px;font-size:13.5px;line-height:1.45;}
   .tc-msg b{display:block;color:var(--accent3);font-size:11.5px;margin-bottom:2px;}
   .tc-msg.me b{color:var(--accent);}
@@ -366,16 +367,9 @@
       </div>
     </section>
 
-    <!-- ============ PROFILE (you + meals + stack) ============ -->
-    <section class="tab" id="tab-profile">
-      <div class="hero" style="margin-top:8px;">
-        <div class="hi">Your profile</div>
-        <div class="big" id="p-name" style="font-size:26px;">—</div>
-        <div style="color:var(--muted);font-size:13px;margin-top:6px;" id="p-meta"></div>
-        <button class="btn ghost small" style="margin-top:12px;" onclick="openModal('profile')">Edit Profile · PIN · Weight Trend</button>
-      </div>
-
-      <h2 class="section">Meals</h2>
+    <!-- ============ MEALS ============ -->
+    <section class="tab" id="tab-meals">
+      <h2 class="section" style="margin-top:8px;">Meals</h2>
       <div class="card">
         <div class="wknav">
           <button onclick="mealDayShift(-1)">‹</button>
@@ -386,6 +380,16 @@
         <div id="meal-list"><div class="empty">Nothing logged. Fuel up. 🍳</div></div>
       </div>
       <button class="btn" onclick="openModal('meal')">+ Log a Meal</button>
+    </section>
+
+    <!-- ============ PROFILE (you + stack) ============ -->
+    <section class="tab" id="tab-profile">
+      <div class="hero" style="margin-top:8px;">
+        <div class="hi">Your profile</div>
+        <div class="big" id="p-name" style="font-size:26px;">—</div>
+        <div style="color:var(--muted);font-size:13px;margin-top:6px;" id="p-meta"></div>
+        <button class="btn ghost small" style="margin-top:12px;" onclick="openModal('profile')">Edit Profile · PIN · Weight Trend</button>
+      </div>
 
       <h2 class="section">Stack</h2>
       <div class="card">
@@ -476,15 +480,15 @@
     <button data-t="train" onclick="go('train')">
       <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h3"/><path d="M19 12h3"/><path d="M5 8v8"/><path d="M9 6v12"/><path d="M15 6v12"/><path d="M19 8v8"/><path d="M9 12h6"/></svg>
       Train</button>
-    <button data-t="team" onclick="go('team')">
-      <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-      Team</button>
+    <button data-t="meals" onclick="go('meals')">
+      <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v7a2 2 0 002 2v9"/><path d="M11 3v7a2 2 0 01-2 2"/><path d="M17 3c-1.5 2.5-1.5 6.5 0 9v9"/></svg>
+      Meals</button>
     <button data-t="chat" onclick="go('chat')">
       <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
       Coach</button>
-    <button data-t="profile" onclick="go('profile')">
-      <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      Profile</button>
+    <button data-t="team" onclick="go('team')">
+      <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      Team</button>
   </nav>
 
   <!-- ============ MODALS ============ -->
@@ -716,7 +720,8 @@ function go(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
   $('main').scrollTop=0;
   if(t==='team'){ teamView('chat'); loadCommunity(); }
-  if(t==='profile'){ mealDay=null; renderMeals(); stackDay=null; renderStack(); }
+  if(t==='meals'){ mealDay=null; renderMeals(); }
+  if(t==='profile'){ stackDay=null; renderStack(); }
 }
 
 /* =============== render =============== */
@@ -853,7 +858,7 @@ function renderTeamFeed(){
     const stats = [w.dur?w.dur+' min':'', w.sets?w.sets+' sets':'', w.vol?w.vol.toLocaleString()+' lb':''].filter(Boolean).join(' · ');
     return `<div class="feed-item">
       <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
-      <div class="info"><b>${esc(m.name)} — ${esc(w.type)}</b><small>${esc(stats||'logged')}${w.when?' · '+esc(w.when):''}</small></div>
+      <div class="info"><b>${esc(m.name)}</b><small><b class="wtype">${esc(w.type)}</b>${stats?' · '+esc(stats):''}${w.when?' · '+esc(w.when):''}</small></div>
     </div>`;
   }).join('') || '<div class="empty">Nobody\'s trained yet. Someone go first. 🏋️</div>';
 }
