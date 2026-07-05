@@ -689,7 +689,9 @@ function totals(){
   const list = mealsToday();
   const cal = list.reduce((a,m)=>a+m.cal,0);
   const pro = list.reduce((a,m)=>a+m.pro,0);
-  return {cal, pro};
+  const carb = list.reduce((a,m)=>a+(m.carb||0),0);
+  const fat = list.reduce((a,m)=>a+(m.fat||0),0);
+  return {cal, pro, carb, fat};
 }
 
 function renderHome(){
@@ -828,15 +830,15 @@ async function bump(i, btn){
 }
 
 function renderMeals(){
-  const {cal,pro} = totals();
-  $('m-total').textContent = cal+' kcal · '+pro+'g protein';
+  const {cal,pro,carb,fat} = totals();
+  $('m-total').textContent = cal+' kcal · '+pro+'P · '+carb+'C · '+fat+'F';
   const el = $('meal-list');
   const todays = mealsToday();
   el.innerHTML = todays.length ? todays.map((m,i)=>`
     <div class="item">
       <div class="emoji">${m.emoji}</div>
       <div class="info"><b>${esc(m.name)}</b><small>${m.time}</small></div>
-      <div class="val">${m.cal}<small>KCAL · ${m.pro}G PRO</small></div>
+      <div class="val">${m.cal}<small>KCAL · ${m.pro}P · ${m.carb||0}C · ${m.fat||0}F</small></div>
     </div>`).join('') : '<div class="empty">Nothing logged yet. Fuel up. 🍳</div>';
 }
 
@@ -1185,6 +1187,10 @@ function openModal(kind){
       <div class="field"><label>Calories</label><input id="f-cal" type="number" placeholder="650"></div>
       <div class="field"><label>Protein (g)</label><input id="f-pro" type="number" placeholder="45"></div>
     </div>
+    <div class="fieldrow">
+      <div class="field"><label>Carbs (g)</label><input id="f-carb" type="number" placeholder="60"></div>
+      <div class="field"><label>Fats (g)</label><input id="f-fat" type="number" placeholder="20"></div>
+    </div>
     <button class="btn" onclick="saveMeal()">Save Meal</button>`;
   if(kind==='workout') sheet.innerHTML = `
     <h3>Log a Workout</h3>
@@ -1232,8 +1238,9 @@ function closeModal(){ $('modal').classList.remove('open'); }
 
 function saveMeal(){
   const name=$('f-name').value.trim(), cal=+$('f-cal').value||0, pro=+$('f-pro').value||0;
+  const carb=+$('f-carb').value||0, fat=+$('f-fat').value||0;
   if(!name) return toast('Name it first!');
-  S.meals.push({name, cal, pro, emoji:'🍽', time:nowStr(), date:todayISO()});
+  S.meals.push({name, cal, pro, carb, fat, emoji:'🍽', time:nowStr(), date:todayISO()});
   store.save(); renderAll(); closeModal(); toast('Meal logged ✓');
 }
 function saveWorkout(){
@@ -1313,7 +1320,7 @@ function buildContext(){
     name: p.name,
     calorieTarget: p.calTarget, proteinTarget: p.proTarget,
     todayCalories: cal, todayProtein: pro,
-    mealsToday: mealsToday().map(m=>`${m.name} (${m.cal} kcal, ${m.pro}g protein, ${m.time})`),
+    mealsToday: mealsToday().map(m=>`${m.name} (${m.cal} kcal, ${m.pro}g protein, ${m.carb||0}g carbs, ${m.fat||0}g fat, ${m.time})`),
     currentWeightLbs: S.weights[S.weights.length-1], goalWeightLbs: p.goalWeight,
     recentWeights: S.weights.slice(-7),
     trainingStreakDays: S.streak,

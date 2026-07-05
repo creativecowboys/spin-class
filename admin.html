@@ -246,7 +246,7 @@ function renderMembers(){
         <div class="sect">Weights</div>
         ${(s.weights||[]).slice(-10).map(x=>`<span class="pill"><b>${x}</b> lbs</span>`).join('')||'<span class="muted">None.</span>'}
         <div class="sect">Recent Meals</div>
-        ${(s.meals||[]).slice(-10).reverse().map(x=>`<span class="pill"><b>${esc(x.name)}</b> ${x.cal} kcal · ${x.pro}g${x.date?' · '+x.date:''}</span>`).join('')||'<span class="muted">None.</span>'}
+        ${(s.meals||[]).slice(-10).reverse().map(x=>`<span class="pill"><b>${esc(x.name)}</b> ${x.cal} kcal · ${x.pro}P · ${x.carb||0}C · ${x.fat||0}F${x.date?' · '+x.date:''}</span>`).join('')||'<span class="muted">None.</span>'}
         <div class="sect">Stack</div>
         ${(s.stack||[]).map(x=>`<span class="pill"><b>${esc(x.name)}</b> ${esc(x.dose)}</span>`).join('')||'<span class="muted">Empty.</span>'}
         <div class="muted" style="margin-top:12px;">Device ID: ${m.id}</div>
