@@ -149,6 +149,16 @@
   .cw-item{position:relative;overflow:hidden;border-radius:10px;}
   .cw-del{position:absolute;top:0;right:0;bottom:0;width:84px;background:var(--accent2);color:#0b0b0f;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
   .cw-face{position:relative;background:var(--bg);transition:transform .18s ease;touch-action:pan-y;}
+  .ba{display:flex;gap:10px;margin-bottom:12px;}
+  .ba-col{flex:1;text-align:center;}
+  .ba-lbl{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
+  .ba-col img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:12px;cursor:pointer;background:var(--surface2);}
+  .ba-d{font-size:11px;color:var(--muted);margin-top:5px;}
+  .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:4px;}
+  .photo-cell{position:relative;}
+  .photo-cell img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer;background:var(--surface2);}
+  .photo-del{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;border:none;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .photo-date{font-size:10px;color:var(--muted);text-align:center;margin-top:4px;}
   .bw-ex{background:var(--surface2);border-radius:10px;padding:10px 12px;margin-bottom:8px;}
   .bw-ex-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}
   .bw-ex-top b{font-size:13.5px;}
@@ -414,6 +424,13 @@
         <div style="color:var(--muted);font-size:13px;margin-top:6px;" id="p-meta"></div>
         <button class="btn ghost small" style="margin-top:12px;" onclick="openModal('profile')">Edit Profile · PIN · Weight Trend</button>
       </div>
+
+      <h2 class="section">Progress Photos</h2>
+      <div id="photo-area"></div>
+      <label class="btn ghost" style="display:block;text-align:center;cursor:pointer;">+ Add Photo
+        <input type="file" accept="image/*" onchange="onPhotoPick(this)" style="display:none;">
+      </label>
+      <p class="tagline">Only you see these. Date each one to track where you started and where you are now.</p>
 
       <h2 class="section">Stack</h2>
       <div class="card">
@@ -1490,6 +1507,80 @@ function renderProfileCard(){
   const wv = (S.weights && S.weights.length) ? S.weights[S.weights.length-1].w : null;
   $('p-meta').textContent = (wv!=null ? wv.toFixed(1)+' lbs'+(p.goalWeight?' · goal '+p.goalWeight:'') : 'no weigh-ins yet')
     + ' · targets '+p.calTarget+' kcal / '+p.proTarget+'g protein';
+  renderPhotos();
+}
+
+/* =============== progress photos =============== */
+function fmtPhotoDate(p){ const d=new Date((p.date||todayISO())+'T12:00:00'); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+function sortedPhotos(){ return (S.photos||[]).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')); }
+function renderPhotos(){
+  const el=$('photo-area'); if(!el) return;
+  const ph=sortedPhotos();
+  if(!ph.length){ el.innerHTML='<div class="card"><div class="empty">No photos yet. Snap your starting point. 📸</div></div>'; return; }
+  let html='';
+  if(ph.length>1){
+    const first=ph[0], last=ph[ph.length-1];
+    html+=`<div class="ba">
+      <div class="ba-col"><div class="ba-lbl">Where it started</div><img src="${esc(first.url)}" onclick="viewPhoto('${esc(first.url)}')"><div class="ba-d">${fmtPhotoDate(first)}</div></div>
+      <div class="ba-col"><div class="ba-lbl">Now</div><img src="${esc(last.url)}" onclick="viewPhoto('${esc(last.url)}')"><div class="ba-d">${fmtPhotoDate(last)}</div></div>
+    </div>`;
+  }
+  html+='<div class="photo-grid">'+ph.slice().reverse().map(p=>`
+    <div class="photo-cell">
+      <img src="${esc(p.url)}" onclick="viewPhoto('${esc(p.url)}')">
+      <button class="photo-del" onclick="deletePhoto('${esc(p.url)}')">✕</button>
+      <div class="photo-date">${fmtPhotoDate(p)}</div>
+    </div>`).join('')+'</div>';
+  el.innerHTML=html;
+}
+function viewPhoto(url){
+  $('sheet').innerHTML=`<h3>Progress Photo</h3><img src="${esc(url)}" style="width:100%;border-radius:14px;"><button class="btn ghost" style="margin-top:14px;" onclick="closeModal()">Close</button>`;
+  $('modal').classList.add('open');
+}
+function compressImage(file, maxDim, quality){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.naturalWidth, h=img.naturalHeight;
+      if(w>=h && w>maxDim){ h=Math.round(h*maxDim/w); w=maxDim; }
+      else if(h>w && h>maxDim){ w=Math.round(w*maxDim/h); h=maxDim; }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      try{ resolve(c.toDataURL('image/jpeg', quality)); }catch(e){ reject(e); }
+    };
+    img.onerror=reject;
+    const fr=new FileReader(); fr.onload=()=>img.src=fr.result; fr.onerror=reject; fr.readAsDataURL(file);
+  });
+}
+let pendingPhoto=null;
+async function onPhotoPick(input){
+  const file=input.files && input.files[0]; input.value='';
+  if(!file) return;
+  toast('Processing photo…');
+  try{ pendingPhoto=await compressImage(file, 1080, 0.72); }
+  catch(e){ return toast('Couldn\'t read that image'); }
+  openModal('photo');
+}
+async function savePhoto(){
+  if(!pendingPhoto || !S || !S.id) return;
+  const date=$('f-photodate').value||todayISO();
+  const btn=$('photo-save'); if(btn){ btn.disabled=true; btn.textContent='Uploading…'; }
+  try{
+    const r=await fetch('/api/photo',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({id:S.id, dataUrl:pendingPhoto})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok && d.url){
+      S.photos=S.photos||[];
+      S.photos.push({url:d.url, date, at:Date.now()});
+      pendingPhoto=null; store.save(); renderAll(); closeModal(); toast('Photo added ✓');
+    } else { if(btn){ btn.disabled=false; btn.textContent='Save Photo'; } toast(d.error==='too large'?'Photo too large — try a smaller one':'Upload failed — try again'); }
+  }catch(e){ if(btn){ btn.disabled=false; btn.textContent='Save Photo'; } toast('Upload failed — try again'); }
+}
+async function deletePhoto(url){
+  if(!confirm('Delete this photo?')) return;
+  try{ await fetch('/api/photo',{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({id:S.id, url})}); }catch(e){}
+  S.photos=(S.photos||[]).filter(p=>p.url!==url);
+  store.save(); renderAll(); toast('Photo deleted');
 }
 
 function renderAll(){ renderHome(); renderMeals(); renderTrain(); renderStack(); renderProfileCard();
@@ -1528,6 +1619,12 @@ function openModal(kind, arg){
       <div class="field"><label>Date</label><input id="f-wkdate" type="date" value="${todayISO()}"></div>
     </div>
     <button class="btn" onclick="saveWorkout()">Save Workout</button>`;
+  if(kind==='photo'){
+    sheet.innerHTML = `<h3>Add Progress Photo</h3>
+      <img src="${pendingPhoto}" style="width:100%;border-radius:14px;margin-bottom:14px;">
+      <div class="field"><label>Date this photo was taken</label><input id="f-photodate" type="date" value="${todayISO()}"></div>
+      <button class="btn" id="photo-save" onclick="savePhoto()">Save Photo</button>`;
+  }
   if(kind==='weight'){
     const editing = (arg!=null && S.weights && S.weights[arg]);
     const e = editing ? S.weights[arg] : null;
