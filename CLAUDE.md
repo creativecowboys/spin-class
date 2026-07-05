@@ -40,6 +40,8 @@ SPIN CLASS is Dave's fitness web app for himself and friends. Joke name — ther
 - Admin console profile editor shows/resets each member's PIN (blank = none, re-enables claim-by-name)
 
 ## Known gaps / next up
+- Onboarding now guards against duplicate accounts: finishOnboard() does a name lookup first — if the name exists with a PIN it routes to the login screen, if it exists without a PIN it reconnects (adoptAccount) instead of minting a new device id. This fixes "extra Dave keeps appearing" (root cause: a device whose localStorage was evicted re-ran onboarding and made a fresh account). Setting a PIN makes the guard airtight.
+- Macro targets: profile editor has Calories/Protein/Carbs/Fats per-day targets (carbTarget/fatTarget default 250/70); the home "Today's Targets" card shows all four as colored progress bars (lime/cyan/amber/pink); coach context includes all four targets + today's totals.
 - Last-write-wins sync can clobber concurrent edits (admin push vs member mid-workout)
 - Wishlist: rest timer between sets, per-person programs, PWA manifest/icon
 
