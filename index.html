@@ -145,6 +145,11 @@
   .dose.overdue .time b{color:var(--accent2);}
   .tagline{font-size:11px;color:var(--muted);margin:10px 4px 0;line-height:1.5;}
   /* ---------- chat ---------- */
+  .seg{display:flex;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px;margin:6px 0 12px;}
+  .seg button{flex:1;background:none;border:none;color:var(--muted);font-weight:800;font-size:13px;padding:9px 0;border-radius:9px;cursor:pointer;letter-spacing:.5px;}
+  .seg button.on{background:var(--accent);color:#0b0b0f;}
+  .teamchat{display:flex;flex-direction:column;height:calc(100dvh - 200px);}
+  .teamchat .tcmsgs{flex:1;overflow-y:auto;padding:4px 2px 10px;}
   .chatwrap{display:flex;flex-direction:column;height:calc(100dvh - 150px);}
   .msgs{flex:1;overflow-y:auto;padding:6px 2px 12px;display:flex;flex-direction:column;gap:10px;}
   .msg{max-width:82%;padding:12px 15px;border-radius:18px;font-size:14.5px;line-height:1.45;white-space:pre-wrap;}
@@ -352,7 +357,7 @@
       </div>
 
       <h2 class="section">Team This Week</h2>
-      <div class="card" id="team-week" onclick="go('team')" style="cursor:pointer;">
+      <div class="card" id="team-week" onclick="go('team');teamView('crew')" style="cursor:pointer;">
         <div class="empty">Loading the crew…</div>
       </div>
 
@@ -425,16 +430,22 @@
 
     <!-- ============ TEAM ============ -->
     <section class="tab" id="tab-team">
-      <h2 class="section" style="margin-top:4px;">Crew Chat</h2>
-      <div class="card" style="padding:12px 14px;">
-        <div id="tchat-msgs" style="max-height:260px;overflow-y:auto;"><div class="empty">Loading…</div></div>
-        <div class="inputrow" style="padding-bottom:0;">
-          <input id="tchat-in" maxlength="300" placeholder="Message the crew…" onkeydown="if(event.key==='Enter')sendTeamMsg()">
-          <button onclick="sendTeamMsg()">↑</button>
+      <div class="seg" id="team-seg">
+        <button class="on" data-tv="chat" onclick="teamView('chat')">Chat</button>
+        <button data-tv="crew" onclick="teamView('crew')">Crew</button>
+      </div>
+      <div id="teamview-chat">
+        <div class="teamchat">
+          <div class="tcmsgs" id="tchat-msgs"><div class="empty">Loading…</div></div>
+          <div class="inputrow" style="padding-bottom:0;">
+            <input id="tchat-in" maxlength="300" placeholder="Message the crew…" onkeydown="if(event.key==='Enter')sendTeamMsg()">
+            <button onclick="sendTeamMsg()">↑</button>
+          </div>
         </div>
       </div>
-      <h2 class="section">The Crew</h2>
-      <div id="team-feed"><div class="empty">Loading…</div></div>
+      <div id="teamview-crew" style="display:none;">
+        <div id="team-feed"><div class="empty">Loading…</div></div>
+      </div>
     </section>
 
     <!-- ============ CHAT ============ -->
@@ -706,7 +717,7 @@ function go(t){
   $('tab-'+t).classList.add('active');
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
   $('main').scrollTop=0;
-  if(t==='team') loadCommunity();
+  if(t==='team'){ teamView('chat'); loadCommunity(); }
   if(t==='profile'){ mealDay=null; renderMeals(); stackDay=null; renderStack(); }
 }
 
@@ -841,6 +852,15 @@ function renderTeamFeed(){
   }).join('') || '<div class="empty">Nobody\'s trained yet. Someone go first. 🏋️</div>';
 }
 
+let teamTab = 'chat';
+function teamView(v){
+  teamTab = v;
+  document.querySelectorAll('#team-seg button').forEach(b=>b.classList.toggle('on', b.dataset.tv===v));
+  const c=$('teamview-chat'), f=$('teamview-crew');
+  if(c) c.style.display = v==='chat'?'':'none';
+  if(f) f.style.display = v==='crew'?'':'none';
+  if(v==='chat'){ const el=$('tchat-msgs'); if(el) el.scrollTop=el.scrollHeight; }
+}
 function tcTime(at){
   const d = new Date(at);
   const sameDay = d.toDateString() === new Date().toDateString();
