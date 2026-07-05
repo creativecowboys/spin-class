@@ -152,6 +152,7 @@
   .msg.user{align-self:flex-end;background:var(--accent);color:#0b0b0f;font-weight:600;border-bottom-right-radius:6px;}
   .msg.ai{align-self:flex-start;background:var(--surface2);border:1px solid var(--border);border-bottom-left-radius:6px;}
   .msg.ai b{color:var(--accent);}
+  .logmeal{align-self:flex-start;max-width:82%;margin-top:-2px;background:rgba(204,255,0,.08);border:1px solid var(--accent);color:var(--accent);border-radius:14px;padding:10px 14px;font-size:12.5px;font-weight:800;cursor:pointer;text-align:left;line-height:1.3;}
   .typing{align-self:flex-start;color:var(--muted);font-size:13px;padding:6px 12px;display:none;}
   .typing.on{display:block;}
   .chips{display:flex;gap:8px;overflow-x:auto;padding:8px 2px;flex-shrink:0;scrollbar-width:none;}
@@ -1489,12 +1490,38 @@ function coachReply(q){
 function ask(q){ $('chat-in').value=q; send(); }
 
 let chatHist = [];
+/* pull machine-readable [[LOG_MEAL:{...}]] tags out of a coach reply → clean text + meals */
+function parseCoachMeals(text){
+  const meals=[];
+  const clean = String(text).replace(/\[\[LOG_MEAL:(\{[\s\S]*?\})\]\]/g, (_,j)=>{
+    try{ const o=JSON.parse(j); if(o && o.name) meals.push(o); }catch(e){}
+    return '';
+  }).replace(/\n{3,}/g,'\n\n').trim();
+  return {clean, meals};
+}
+function coachMsgHtml(rawText){
+  const {clean, meals} = parseCoachMeals(rawText);
+  let html = `<div class="msg ai">${esc(clean)}</div>`;
+  html += meals.map(meal=>{
+    const cal=+meal.cal||0, pro=+(meal.protein!=null?meal.protein:meal.pro)||0,
+          carb=+(meal.carbs!=null?meal.carbs:meal.carb)||0, fat=+meal.fat||0;
+    const payload=encodeURIComponent(JSON.stringify({name:meal.name, cal, pro, carb, fat}));
+    return `<button class="logmeal" onclick="logCoachMeal('${payload}')">+ Log “${esc(meal.name)}” · ${cal} kcal · ${pro}P · ${carb}C · ${fat}F</button>`;
+  }).join('');
+  return html;
+}
+function logCoachMeal(payload){
+  let m; try{ m=JSON.parse(decodeURIComponent(payload)); }catch(e){ return; }
+  openModal('meal');
+  $('f-name').value=m.name||''; $('f-cal').value=m.cal||''; $('f-pro').value=m.pro||'';
+  $('f-carb').value=m.carb||''; $('f-fat').value=m.fat||''; $('f-mdate').value=todayISO();
+}
 function renderChat(){
   chatHist = (S.chat || []).slice();
   if(!chatHist.length) return;
   const msgs = $('msgs');
   msgs.innerHTML = $('chat-greet').outerHTML +
-    chatHist.map(m=>`<div class="msg ${m.role==='user'?'user':'ai'}">${esc(m.content)}</div>`).join('');
+    chatHist.map(m=> m.role==='user' ? `<div class="msg user">${esc(m.content)}</div>` : coachMsgHtml(m.content)).join('');
   msgs.scrollTop = msgs.scrollHeight;
 }
 function buildContext(){
@@ -1539,7 +1566,7 @@ async function send(){
   $('typing').classList.remove('on');
   if(reply){
     chatHist.push({role:'assistant', content:reply});
-    msgs.insertAdjacentHTML('beforeend', `<div class="msg ai">${esc(reply)}</div>`);
+    msgs.insertAdjacentHTML('beforeend', coachMsgHtml(reply));
   } else {
     const fb = coachReply(q);
     chatHist.push({role:'assistant', content: fb.replace(/<[^>]+>/g,'')});
