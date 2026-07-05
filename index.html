@@ -58,13 +58,9 @@
   .hero .hi{color:var(--muted);font-size:14px;font-weight:600;}
   .hero .big{font-size:30px;font-weight:900;line-height:1.15;margin-top:4px;}
   .hero .big em{font-style:normal;color:var(--accent);}
-  .statrow{display:flex;gap:10px;margin-top:16px;}
-  .stat{flex:1;background:var(--surface2);border-radius:14px;padding:12px 10px;text-align:center;}
-  .stat .num{font-size:22px;font-weight:900;}
-  .stat .lbl{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:2px;}
-  .stat.cal .num{color:var(--accent);}
-  .stat.pro .num{color:var(--accent3);}
-  .stat.str .num{color:var(--accent2);}
+  .herochat{margin-top:16px;background:var(--surface2);border-radius:14px;padding:11px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;}
+  .herochat .hc-label{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--accent);flex-shrink:0;}
+  .herochat .hc-msg{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;}
   /* ---------- rings / bars ---------- */
   .bar{height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:8px;}
   .bar i{display:block;height:100%;border-radius:4px;background:var(--accent);transition:width .5s ease;}
@@ -172,11 +168,13 @@
     padding:8px 4px calc(10px + env(safe-area-inset-bottom));
   }
   nav button{
+    position:relative;
     flex:1;background:none;border:none;color:var(--muted);cursor:pointer;
     display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;
   }
   nav button .ni{width:20px;height:20px;}
   nav button.active{color:var(--accent);}
+  nav button.badge::after{content:'';position:absolute;top:2px;left:calc(50% + 7px);width:9px;height:9px;border-radius:50%;background:var(--accent2);border:2px solid rgba(15,15,20,.95);}
   /* ---------- modal ---------- */
   .modal{
     position:absolute;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;z-index:50;
@@ -327,10 +325,9 @@
       <div class="hero">
         <div class="hi" id="greet"></div>
         <div class="big">Let's get after it,<br><em id="hero-name"></em></div>
-        <div class="statrow">
-          <div class="stat cal"><div class="num" id="h-cals">0</div><div class="lbl">Cals</div></div>
-          <div class="stat pro"><div class="num" id="h-pro">0g</div><div class="lbl">Protein</div></div>
-          <div class="stat str"><div class="num" id="h-streak">0🔥</div><div class="lbl">Streak</div></div>
+        <div class="herochat" id="hero-chat" onclick="go('team')" style="display:none;">
+          <div class="hc-label">Crew chat</div>
+          <div class="hc-msg" id="hero-chat-msg"></div>
         </div>
       </div>
 
@@ -738,9 +735,7 @@ function renderHome(){
   const p = P();
   const d = new Date();
   $('greet').textContent = d.toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'});
-  $('h-cals').textContent = cal;
-  $('h-pro').textContent = pro+'g';
-  $('h-streak').textContent = S.streak+'🔥';
+  renderHeroChat();
   $('g-cal-txt').textContent = cal;
   $('g-pro-txt').textContent = pro;
   $('g-cal-target').textContent = p.calTarget;
@@ -811,8 +806,18 @@ async function loadCommunity(){
     const r = await fetch('/api/community?id='+S.id);
     if(!r.ok) return;
     COMM = await r.json();
-    renderTeamWeek(); renderTeamFeed(); renderTeamChat();
+    renderTeamWeek(); renderTeamFeed(); renderTeamChat(); renderHeroChat();
+    if(onChatView()) markChatSeen(); else updateChatBadge();
   }catch(e){}
+}
+function renderHeroChat(){
+  const el=$('hero-chat'), msgEl=$('hero-chat-msg'); if(!el||!msgEl) return;
+  const chat=(COMM&&COMM.chat)||[];
+  if(!chat.length){ el.style.display='none'; return; }
+  const m=chat[chat.length-1];
+  const who=(COMM&&m.k===COMM.you)?'You':m.n;
+  msgEl.textContent = who+': '+m.t;
+  el.style.display='';
 }
 function teamWeekISO(){
   const d = new Date(); const mon = new Date(d);
@@ -859,7 +864,7 @@ function teamView(v){
   const c=$('teamview-chat'), f=$('teamview-crew');
   if(c) c.style.display = v==='chat'?'':'none';
   if(f) f.style.display = v==='crew'?'':'none';
-  if(v==='chat'){ const el=$('tchat-msgs'); if(el) el.scrollTop=el.scrollHeight; }
+  if(v==='chat'){ const el=$('tchat-msgs'); if(el) el.scrollTop=el.scrollHeight; markChatSeen(); }
 }
 function tcTime(at){
   const d = new Date(at);
@@ -898,10 +903,19 @@ async function sendTeamMsg(){
     else { inp.value = text; toast('Couldn\'t send — try again'); }
   }catch(e){ inp.value = text; toast('Couldn\'t send — try again'); }
 }
-setInterval(()=>{
-  const t = $('tab-team');
-  if(t && t.classList.contains('active') && !document.hidden) loadCommunity();
-}, 25000);
+/* unread crew-chat badge on the Team nav icon */
+function newestChatAt(){ const c=(COMM&&COMM.chat)||[]; return c.length? c[c.length-1].at : 0; }
+function chatSeenGet(){ try{ return +localStorage.getItem('chatSeen')||0; }catch(e){ return 0; } }
+function chatSeenSet(v){ try{ localStorage.setItem('chatSeen', String(v)); }catch(e){} }
+function onChatView(){ return $('tab-team').classList.contains('active') && teamTab==='chat'; }
+function markChatSeen(){ chatSeenSet(newestChatAt()); updateChatBadge(); }
+function updateChatBadge(){
+  const btn=document.querySelector('nav button[data-t="team"]'); if(!btn) return;
+  btn.classList.toggle('badge', newestChatAt()>chatSeenGet() && !onChatView());
+}
+/* near-live chat: poll fast while viewing chat, slower in the background */
+setInterval(()=>{ if(!document.hidden && onChatView()) loadCommunity(); }, 4000);
+setInterval(()=>{ if(!document.hidden && !onChatView() && S && S.id && S.profile) loadCommunity(); }, 20000);
 
 let mealDay = null; // ISO of the day the Meals list is showing; null = today
 function curMealDay(){ return mealDay || todayISO(); }
@@ -1287,7 +1301,7 @@ function renderProfileCard(){
 }
 
 function renderAll(){ renderHome(); renderMeals(); renderTrain(); renderStack(); renderProfileCard();
-  if(S && S.profile) $('avatar').textContent = P().name;
+  if(S && S.profile) $('avatar').textContent = P().name + ' · ' + (S.streak||0) + '🔥';
   const pn=$('pin-nudge'); if(pn) pn.style.display=(S && S.profile && !S.pin)?'':'none';
 }
 
@@ -1602,7 +1616,7 @@ function finishOnboard(){
 function personalize(){
   const p = P();
   $('hero-name').textContent = p.name+'.';
-  $('avatar').textContent = p.name;
+  $('avatar').textContent = p.name + ' · ' + (S.streak||0) + '🔥';
   $('chat-greet').textContent = 'Hey '+p.name+" — I'm your SPIN CLASS coach. (No, there are no bikes. Don't ask.) I can see today's meals, training, weight trend, and your stack schedule. Ask me anything. 🏋️";
 }
 
