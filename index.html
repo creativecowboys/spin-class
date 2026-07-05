@@ -201,11 +201,10 @@
   .feed-item .info{flex:1;min-width:0;}
   .feed-item .info b{font-size:13.5px;}
   .feed-item .info small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;}
-  .feed-item .info small.bumpnames{color:var(--accent);font-size:10.5px;}
-  .bump{flex:none;background:var(--surface2);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:7px 10px;font-size:15px;cursor:pointer;display:flex;align-items:center;gap:4px;}
-  .bump span{font-size:11px;font-weight:800;color:var(--muted);}
-  .bump.on{border-color:var(--accent);background:rgba(204,255,0,.1);}
-  .bump.on span{color:var(--accent);}
+  .tc-msg{margin-bottom:10px;font-size:13.5px;line-height:1.45;}
+  .tc-msg b{display:block;color:var(--accent3);font-size:11.5px;margin-bottom:2px;}
+  .tc-msg.me b{color:var(--accent);}
+  .tc-msg b span{color:var(--muted);font-weight:400;font-size:10px;margin-left:6px;}
   /* ---------- program ---------- */
   .pday{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;}
   .pday.today{border-color:rgba(204,255,0,.5);}
@@ -406,7 +405,15 @@
 
     <!-- ============ TEAM ============ -->
     <section class="tab" id="tab-team">
-      <h2 class="section" style="margin-top:4px;">The Crew</h2>
+      <h2 class="section" style="margin-top:4px;">Crew Chat</h2>
+      <div class="card" style="padding:12px 14px;">
+        <div id="tchat-msgs" style="max-height:260px;overflow-y:auto;"><div class="empty">Loading…</div></div>
+        <div class="inputrow" style="padding-bottom:0;">
+          <input id="tchat-in" maxlength="300" placeholder="Say something to the crew…" onkeydown="if(event.key==='Enter')sendTeamMsg()">
+          <button onclick="sendTeamMsg()">↑</button>
+        </div>
+      </div>
+      <h2 class="section">The Crew</h2>
       <div id="team-feed"><div class="empty">Loading…</div></div>
     </section>
 
@@ -763,14 +770,14 @@ function renderWeightPanel(){
 }
 
 /* =============== team / community =============== */
-let COMM = null, FEED = [];
+let COMM = null;
 async function loadCommunity(){
   if(!S || !S.id || !S.profile) return;
   try{
     const r = await fetch('/api/community?id='+S.id);
     if(!r.ok) return;
     COMM = await r.json();
-    renderTeamWeek(); renderTeamFeed();
+    renderTeamWeek(); renderTeamFeed(); renderTeamChat();
   }catch(e){}
 }
 function teamWeekISO(){
@@ -802,32 +809,46 @@ function renderTeamFeed(){
   const items = [];
   COMM.members.forEach(m=>m.workouts.forEach((w,idx)=>items.push({m,w,idx})));
   items.sort((a,b)=>(b.w.date||'').localeCompare(a.w.date||'') || a.idx-b.idx);
-  FEED = [];
-  el.innerHTML = items.slice(0,40).map(({m,w},i)=>{
-    FEED[i] = { target:m.key, when:w.when||w.date };
-    const bl = (COMM.bumps && COMM.bumps[m.key+'|'+(w.when||w.date)]) || [];
-    const mine = bl.some(b=>b.k===COMM.you);
+  el.innerHTML = items.slice(0,40).map(({m,w})=>{
     const stats = [w.dur?w.dur+' min':'', w.sets?w.sets+' sets':'', w.vol?w.vol.toLocaleString()+' lb':''].filter(Boolean).join(' · ');
     return `<div class="feed-item">
       <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
-      <div class="info"><b>${esc(m.name)} — ${esc(w.type)}</b><small>${esc(stats||'logged')}${w.when?' · '+esc(w.when):''}</small>
-        ${bl.length?`<small class="bumpnames">🤜 ${bl.map(b=>esc(b.n)).join(', ')}</small>`:''}</div>
-      ${m.key===COMM.you
-        ? (bl.length?`<div class="bump on" style="cursor:default;">🤜<span>${bl.length}</span></div>`:'')
-        : `<button class="bump${mine?' on':''}" onclick="bump(${i},this)">🤜<span>${bl.length||''}</span></button>`}
+      <div class="info"><b>${esc(m.name)} — ${esc(w.type)}</b><small>${esc(stats||'logged')}${w.when?' · '+esc(w.when):''}</small></div>
     </div>`;
   }).join('') || '<div class="empty">Nobody\'s trained yet. Someone go first. 🏋️</div>';
 }
-async function bump(i, btn){
-  const f = FEED[i]; if(!f || !COMM) return;
-  btn.disabled = true;
+
+function tcTime(at){
+  const d = new Date(at);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return (sameDay ? '' : d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · ') + fmtTime(d.getHours(), d.getMinutes());
+}
+function renderTeamChat(){
+  const el = $('tchat-msgs'); if(!el) return;
+  const chat = (COMM && COMM.chat) || [];
+  el.innerHTML = chat.length ? chat.map(m=>`
+    <div class="tc-msg${m.k===(COMM&&COMM.you)?' me':''}">
+      <b>${m.k===(COMM&&COMM.you)?'You':esc(m.n)} <span>${tcTime(m.at)}</span></b>
+      <div>${esc(m.t)}</div>
+    </div>`).join('') : '<div class="empty">Nothing yet. Talk your talk. 🗣</div>';
+  el.scrollTop = el.scrollHeight;
+}
+async function sendTeamMsg(){
+  const inp = $('tchat-in');
+  const text = inp.value.trim();
+  if(!text || !S || !S.id) return;
+  inp.value = '';
   try{
     const r = await fetch('/api/community',{method:'POST',headers:{'content-type':'application/json'},
-      body: JSON.stringify({id:S.id, target:f.target, when:f.when})});
-    if(r.ok){ COMM.bumps[f.target+'|'+f.when] = (await r.json()).bumps || []; renderTeamFeed(); }
-    else btn.disabled = false;
-  }catch(e){ btn.disabled = false; }
+      body: JSON.stringify({id:S.id, text})});
+    if(r.ok){ if(COMM) COMM.chat = (await r.json()).chat || []; renderTeamChat(); }
+    else { inp.value = text; toast('Couldn\'t send — try again'); }
+  }catch(e){ inp.value = text; toast('Couldn\'t send — try again'); }
 }
+setInterval(()=>{
+  const t = $('tab-team');
+  if(t && t.classList.contains('active') && !document.hidden) loadCommunity();
+}, 25000);
 
 function renderMeals(){
   const {cal,pro,carb,fat} = totals();

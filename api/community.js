@@ -27,7 +27,7 @@ export default async function handler(req, res) {
       }))).filter(Boolean);
       // feed is team-only: caller must be an existing member
       if (!docs.some(d => d.id === id)) return res.status(403).json({ error: 'unknown member' });
-      const bumps = (await readBlob('config/bumps.json')) || {};
+      const chat = (await readBlob('config/teamchat.json')) || [];
       const members = docs.map(d => {
         const st = d.doc.state || {};
         const p = st.profile;
@@ -44,32 +44,23 @@ export default async function handler(req, res) {
           }))
         };
       }).filter(Boolean);
-      return res.status(200).json({ you: mkey(id), members, bumps });
+      return res.status(200).json({ you: mkey(id), members, chat });
     }
     if (req.method === 'POST') {
-      const { id, target, when } = req.body || {};
+      const { id, text } = req.body || {};
       const clean = String(id || '').replace(/[^a-f0-9]/gi, '');
-      if (!clean || !target || !when) return res.status(400).json({ error: 'id, target, when required' });
+      const msg = String(text || '').trim().slice(0, 300);
+      if (!clean || !msg) return res.status(400).json({ error: 'id and text required' });
       const me = await readBlob(`users/${clean}.json`);
       if (!me || !me.state || !me.state.profile) return res.status(403).json({ error: 'unknown member' });
-      const myKey = mkey(clean), myName = me.state.profile.name || 'Someone';
-      const bumps = (await readBlob('config/bumps.json')) || {};
-      const bkey = String(target).slice(0, 12) + '|' + String(when).slice(0, 80);
-      const arr = bumps[bkey] || [];
-      const i = arr.findIndex(b => b.k === myKey);
-      if (i >= 0) arr.splice(i, 1); else arr.push({ k: myKey, n: myName, at: Date.now() });
-      if (arr.length) bumps[bkey] = arr; else delete bumps[bkey];
-      // cap the blob: drop the stalest workout keys past 400
-      const keys = Object.keys(bumps);
-      if (keys.length > 400) {
-        keys.sort((a, b) => Math.max(0, ...bumps[a].map(x => x.at || 0)) - Math.max(0, ...bumps[b].map(x => x.at || 0)));
-        keys.slice(0, keys.length - 400).forEach(k => delete bumps[k]);
-      }
-      await put('config/bumps.json', JSON.stringify(bumps), {
+      const chat = (await readBlob('config/teamchat.json')) || [];
+      chat.push({ k: mkey(clean), n: me.state.profile.name || 'Someone', t: msg, at: Date.now() });
+      while (chat.length > 100) chat.shift();
+      await put('config/teamchat.json', JSON.stringify(chat), {
         access: 'public', addRandomSuffix: false, allowOverwrite: true,
         contentType: 'application/json', cacheControlMaxAge: 0
       });
-      return res.status(200).json({ ok: true, bumps: bumps[bkey] || [] });
+      return res.status(200).json({ ok: true, chat });
     }
     return res.status(405).json({ error: 'method not allowed' });
   } catch (e) {
