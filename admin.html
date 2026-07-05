@@ -59,6 +59,11 @@
   .toast.show{transform:translateX(-50%) translateY(0);}
   .login{max-width:380px;margin:14vh auto 0;}
   #app{display:none;}
+  /* schedule assign */
+  .schedgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;}
+  .schedday .sd-l{font-size:11px;font-weight:800;color:var(--muted);margin-bottom:4px;}
+  .schedday select{width:100%;font-size:13px;}
+  .schedday.today .sd-l{color:var(--accent);}
 </style>
 </head>
 <body>
@@ -148,6 +153,53 @@ function boot(){
 
 /* ---------- members ---------- */
 let MEMBERS=[];
+let openM = new Set();
+let awOff = 0;
+function toggleM(i){ openM.has(i) ? openM.delete(i) : openM.add(i); document.getElementById('mb-'+i).classList.toggle('open'); }
+function awDates(off){
+  const now=new Date(); const mon=new Date(now);
+  mon.setDate(now.getDate() - ((now.getDay()+6)%7) + off*7);
+  return Array.from({length:7},(_,i)=>{ const d=new Date(mon); d.setDate(mon.getDate()+i); return d; });
+}
+function isoOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function progNow(){ return (PB && PB.length===7) ? PB : DEFPROG; }
+function schedHtml(i){
+  const m=MEMBERS[i]; const sch=(m.state&&m.state.schedule)||{};
+  const days=awDates(awOff); const PROG=progNow();
+  const t=isoOf(new Date());
+  const label=days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+days[6].toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return `<div class="sect" style="display:flex;align-items:center;gap:8px;">Assign Workouts — ${label}
+      <button class="btn ghost small" onclick="awOff--;renderMembers()">‹</button>
+      <button class="btn ghost small" onclick="awOff++;renderMembers()">›</button></div>
+    <div class="schedgrid">${days.map(d=>{
+      const iso=isoOf(d); const cur=sch[iso];
+      return `<div class="schedday${iso===t?' today':''}">
+        <div class="sd-l">${d.toLocaleDateString('en-US',{weekday:'short'})} ${d.getDate()}${iso===t?' · TODAY':''}</div>
+        <select onchange="setSched(${i},'${iso}',this.value)">
+          <option value="">— rest / none —</option>
+          ${PROG.map((p,pi)=>`<option value="${pi}" ${cur===pi?'selected':''}>Day ${pi+1} — ${esc(p.name)}</option>`).join('')}
+        </select></div>`;
+    }).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+      <button class="btn ghost small" onclick="fillSched(${i})">⚡ Fill Mon–Sun (Day 1–7)</button>
+      <button class="btn small" onclick="saveSched(${i})">🚀 Push Schedule to ${esc(((m.state||{}).profile||{}).name||'member')}</button>
+    </div>`;
+}
+function setSched(i, iso, v){
+  const s=MEMBERS[i].state; s.schedule=s.schedule||{};
+  if(v==='') delete s.schedule[iso]; else s.schedule[iso]=+v;
+}
+function fillSched(i){
+  const s=MEMBERS[i].state; s.schedule=s.schedule||{};
+  awDates(awOff).forEach((d,idx)=>{ s.schedule[isoOf(d)]=idx; });
+  renderMembers();
+}
+async function saveSched(i){
+  const m=MEMBERS[i];
+  m.state.updatedAt=Date.now();
+  await api('/api/admin-user',{method:'PUT',body:JSON.stringify({id:m.id,state:m.state})});
+  toast('Schedule pushed to '+(((m.state.profile||{}).name)||'member')+' 🚀 (they get it on next app open)');
+}
 async function loadMembers(){
   $('mcount').textContent='Loading members…';
   try{
@@ -165,14 +217,14 @@ function renderMembers(){
     const w=(s.weights&&s.weights.length)?s.weights[s.weights.length-1]:null;
     const wos=(s.workouts||[]);
     return `<div class="card">
-      <div class="mhead" onclick="document.getElementById('mb-${i}').classList.toggle('open')">
+      <div class="mhead" onclick="toggleM(${i})">
         <div>
           <div class="nm">${esc(p.name||'(no name)')}</div>
           <div class="stats">Last active ${fmtDate(m.updated)} · ${wos.length} workouts · streak ${s.streak||0}${w?' · '+w+' lbs':''}</div>
         </div>
         <div class="muted">▼</div>
       </div>
-      <div class="mbody" id="mb-${i}">
+      <div class="mbody${openM.has(i)?' open':''}" id="mb-${i}">
         <div class="sect">Profile (admin edit)</div>
         <div class="row">
           <div class="field"><label>Name</label><input id="pn-${i}" value="${esc(p.name||'')}"></div>
@@ -183,6 +235,7 @@ function renderMembers(){
           <button class="btn small" onclick="saveMember(${i})">Save</button>
           <button class="btn danger small" onclick="delMember(${i})">Delete</button>
         </div>
+        ${schedHtml(i)}
         <div class="sect">Workout Log (${wos.length})</div>
         ${wos.slice(0,15).map(wo=>`
           <div class="wlog"><b>${esc(wo.type)}</b> — ${wo.dur} min${wo.vol?' · '+wo.setsDone+' sets · '+wo.vol.toLocaleString()+' lb':''}
