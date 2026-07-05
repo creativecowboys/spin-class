@@ -304,7 +304,7 @@
 
   <header>
     <div class="logo">SPIN<span>CLASS</span></div>
-    <div class="avatar" id="avatar" onclick="if(S.profile)openModal('profile')" style="cursor:pointer;"></div>
+    <div class="avatar" id="avatar" onclick="if(S.profile)go('profile')" style="cursor:pointer;"></div>
   </header>
 
   <main id="main">
@@ -321,7 +321,7 @@
         </div>
       </div>
 
-      <div class="dosealert" id="dosealert" onclick="go('stack')" style="display:none;">
+      <div class="dosealert" id="dosealert" onclick="go('profile')" style="display:none;">
         <div class="dot"></div>
         <div><b id="dosealert-title">Dose due</b><small id="dosealert-sub"></small></div>
       </div>
@@ -357,11 +357,23 @@
       </div>
     </section>
 
-    <!-- ============ MEALS ============ -->
-    <section class="tab" id="tab-meals">
-      <h2 class="section" style="margin-top:8px;">Today · <span id="m-total">0 kcal · 0g protein</span></h2>
+    <!-- ============ PROFILE (you + meals + stack) ============ -->
+    <section class="tab" id="tab-profile">
+      <div class="hero" style="margin-top:8px;">
+        <div class="hi">Your profile</div>
+        <div class="big" id="p-name" style="font-size:26px;">—</div>
+        <div style="color:var(--muted);font-size:13px;margin-top:6px;" id="p-meta"></div>
+        <button class="btn ghost small" style="margin-top:12px;" onclick="openModal('profile')">Edit Profile · PIN · Weight Trend</button>
+      </div>
+
+      <h2 class="section">Meals Today · <span id="m-total">0 kcal · 0g protein</span></h2>
       <div class="card" id="meal-list"><div class="empty">Nothing logged yet. Fuel up. 🍳</div></div>
       <button class="btn" onclick="openModal('meal')">+ Log a Meal</button>
+
+      <h2 class="section">Stack · Today's Schedule</h2>
+      <div class="card" id="dose-list"></div>
+      <button class="btn ghost" onclick="openModal('compound')">+ Add to Stack</button>
+      <p class="tagline">⚠️ SPIN CLASS only reminds you of the schedule <b>you</b> enter — it never suggests compounds or doses. Set your protocol with your provider.</p>
     </section>
 
     <!-- ============ TRAIN ============ -->
@@ -393,14 +405,6 @@
       <div class="card" id="workout-list"><div class="empty">No sessions yet. First one's free. 💪</div></div>
       <button class="btn ghost" onclick="openModal('workout')">+ Log Other Workout</button>
       </div>
-    </section>
-
-    <!-- ============ STACK ============ -->
-    <section class="tab" id="tab-stack">
-      <h2 class="section" style="margin-top:8px;">Today's Schedule</h2>
-      <div class="card" id="dose-list"></div>
-      <button class="btn ghost" onclick="openModal('compound')">+ Add to Stack</button>
-      <p class="tagline">⚠️ SPIN CLASS only reminds you of the schedule <b>you</b> enter — it never suggests compounds or doses. Set your protocol with your provider.</p>
     </section>
 
     <!-- ============ TEAM ============ -->
@@ -436,21 +440,18 @@
     <button class="active" data-t="home" onclick="go('home')">
       <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
       Home</button>
-    <button data-t="meals" onclick="go('meals')">
-      <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v7a2 2 0 002 2v9"/><path d="M11 3v7a2 2 0 01-2 2"/><path d="M17 3c-1.5 2.5-1.5 6.5 0 9v9"/></svg>
-      Meals</button>
     <button data-t="train" onclick="go('train')">
       <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h3"/><path d="M19 12h3"/><path d="M5 8v8"/><path d="M9 6v12"/><path d="M15 6v12"/><path d="M19 8v8"/><path d="M9 12h6"/></svg>
       Train</button>
     <button data-t="team" onclick="go('team')">
       <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
       Team</button>
-    <button data-t="stack" onclick="go('stack')">
-      <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 7 6 11a6 6 0 01-12 0c0-4 6-11 6-11z"/></svg>
-      Stack</button>
     <button data-t="chat" onclick="go('chat')">
       <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
       Coach</button>
+    <button data-t="profile" onclick="go('profile')">
+      <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Profile</button>
   </nav>
 
   <!-- ============ MODALS ============ -->
@@ -1157,7 +1158,15 @@ function toggleDose(i){
   if(S.stack[i].taken) toast(S.stack[i].name+' logged ✓');
 }
 
-function renderAll(){ renderHome(); renderMeals(); renderTrain(); renderStack();
+function renderProfileCard(){
+  const p = P();
+  $('p-name').textContent = p.name;
+  const w = (S.weights && S.weights.length) ? S.weights[S.weights.length-1] : null;
+  $('p-meta').textContent = (w ? w.toFixed(1)+' lbs'+(p.goalWeight?' · goal '+p.goalWeight:'') : 'no weigh-ins yet')
+    + ' · targets '+p.calTarget+' kcal / '+p.proTarget+'g protein';
+}
+
+function renderAll(){ renderHome(); renderMeals(); renderTrain(); renderStack(); renderProfileCard();
   const pn=$('pin-nudge'); if(pn) pn.style.display=(S && S.profile && !S.pin)?'':'none';
 }
 
