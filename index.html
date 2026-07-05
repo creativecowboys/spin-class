@@ -391,7 +391,6 @@
           <button onclick="weekOff++;renderTrain()">›</button>
         </div>
         <div class="wk" id="weekcal"></div>
-        <button class="btn ghost small" style="margin-top:10px;" onclick="autofillWeek()">⚡ Auto-fill Week (Day 1–7, Mon–Sun)</button>
       </div>
       <h2 class="section">The Program · PPL Strength A/B</h2>
       <div id="program"></div>
@@ -890,13 +889,6 @@ function assignDay(iso, i){
   store.save(); closeModal(); renderTrain(); renderHome();
   toast(i==null?'Day cleared':PROGRAM[i].name+' scheduled ✓');
 }
-function autofillWeek(){
-  const days = weekDates(weekOff);
-  S.schedule = S.schedule || {};
-  days.forEach((d,i)=>{ S.schedule[isoOf(d)] = i; });
-  store.save(); renderTrain(); toast('Week filled: Day 1–7, Mon–Sun ⚡');
-}
-
 let openDay = null;
 function renderProgram(){
   const cur = todaysDay();
