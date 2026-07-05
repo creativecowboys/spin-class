@@ -144,6 +144,12 @@
   .seg{display:flex;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px;margin:6px 0 12px;}
   .seg button{flex:1;background:none;border:none;color:var(--muted);font-weight:800;font-size:13px;padding:9px 0;border-radius:9px;cursor:pointer;letter-spacing:.5px;}
   .seg button.on{background:var(--accent);color:#0b0b0f;}
+  .wh-row{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--border);cursor:pointer;}
+  .wh-row:last-child{border-bottom:none;}
+  .wh-w{font-weight:800;color:var(--text);font-size:14px;width:64px;}
+  .wh-w small{font-weight:400;color:var(--muted);font-size:11px;}
+  .wh-d{flex:1;color:var(--muted);font-size:12px;}
+  .wh-e{color:var(--accent);font-size:11px;font-weight:800;}
   .teamchat{display:flex;flex-direction:column;height:calc(100dvh - 200px);}
   .teamchat .tcmsgs{flex:1;overflow-y:auto;padding:4px 2px 10px;}
   .chatwrap{display:flex;flex-direction:column;height:calc(100dvh - 150px);}
@@ -832,6 +838,19 @@ function renderWeightPanel(){
     $('w-delta').style.color='var(--muted)';
   }
   drawChart(view.map(e=>e.w));
+  renderWeightHistory();
+}
+function renderWeightHistory(){
+  const el=$('w-history'); if(!el) return;
+  const rows=(S.weights||[]).map((e,i)=>({e,i})).sort((a,b)=>b.e.at-a.e.at);
+  el.innerHTML = rows.length ? rows.map(({e,i})=>{
+    const d=new Date(e.at);
+    return `<div class="wh-row" onclick="openModal('weight',${i})">
+      <span class="wh-w">${e.w}<small> lb</small></span>
+      <span class="wh-d">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · ${fmtTime(d.getHours(),d.getMinutes())}</span>
+      <span class="wh-e">edit ›</span>
+    </div>`;
+  }).join('') : '<div class="empty" style="padding:10px 4px;">No weigh-ins yet.</div>';
 }
 
 /* =============== team / community =============== */
@@ -861,11 +880,21 @@ function teamWeekISO(){
   return Array.from({length:7},(_,i)=>{ const x=new Date(mon); x.setDate(mon.getDate()+i);
     return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); });
 }
+/* the current user's own row uses LOCAL workouts/streak so their training
+   shows instantly, before the server round-trip; everyone else from COMM */
+function effectiveMembers(){
+  if(!COMM || !COMM.members) return [];
+  return COMM.members.map(m=>{
+    if(m.key!==COMM.you) return m;
+    const local=(S.workouts||[]).map(w=>({type:w.type||'Workout', dur:w.dur||0, sets:w.setsDone||0, vol:w.vol||0, when:w.when||'', date:w.date||''}));
+    return {...m, workouts:local, streak:S.streak||0, lastActive:Date.now()};
+  });
+}
 function renderTeamWeek(){
   const el = $('team-week'); if(!el) return;
   if(!COMM || !COMM.members || !COMM.members.length){ el.innerHTML='<div class="empty">No crew activity yet.</div>'; return; }
   const wk = teamWeekISO(), today = todayISO();
-  el.innerHTML = [...COMM.members].sort((a,b)=>b.lastActive-a.lastActive).map(m=>{
+  el.innerHTML = [...effectiveMembers()].sort((a,b)=>b.lastActive-a.lastActive).map(m=>{
     const days = new Set(m.workouts.map(w=>w.date));
     const hot = days.has(today);
     const dots = wk.map(d=>`<i class="tw-dot${days.has(d)?' on':''}${d===today?' today':''}"></i>`).join('');
@@ -881,16 +910,24 @@ function renderTeamWeek(){
 function renderTeamFeed(){
   const el = $('team-feed'); if(!el) return;
   if(!COMM){ el.innerHTML='<div class="empty">Can\'t reach the crew right now.</div>'; return; }
+  const mem = effectiveMembers();
   const items = [];
-  COMM.members.forEach(m=>m.workouts.forEach((w,idx)=>items.push({m,w,idx})));
+  mem.forEach(m=>m.workouts.forEach((w,idx)=>items.push({m,w,idx})));
   items.sort((a,b)=>(b.w.date||'').localeCompare(a.w.date||'') || a.idx-b.idx);
-  el.innerHTML = items.slice(0,40).map(({m,w})=>{
+  const feed = items.slice(0,40).map(({m,w})=>{
     const stats = [w.dur?w.dur+' min':'', w.sets?w.sets+' sets':'', w.vol?w.vol.toLocaleString()+' lb':''].filter(Boolean).join(' · ');
     return `<div class="feed-item">
       <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
       <div class="info"><b>${esc(m.name)}</b><small><b class="wtype">${esc(w.type)}</b>${stats?' · '+esc(stats):''}${w.when?' · '+esc(w.when):''}</small></div>
     </div>`;
-  }).join('') || '<div class="empty">Nobody\'s trained yet. Someone go first. 🏋️</div>';
+  }).join('');
+  // members who haven't logged a workout yet still appear on the roster
+  const idle = mem.filter(m=>!m.workouts.length).map(m=>`
+    <div class="feed-item" style="opacity:.65;">
+      <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
+      <div class="info"><b>${esc(m.name)}${m.key===COMM.you?' <small style="color:var(--muted)">(you)</small>':''}</b><small>no workouts logged yet</small></div>
+    </div>`).join('');
+  el.innerHTML = (feed+idle) || '<div class="empty">Nobody\'s trained yet. Someone go first. 🏋️</div>';
 }
 
 let teamTab = 'chat';
@@ -1338,6 +1375,7 @@ function renderProfileCard(){
 
 function renderAll(){ renderHome(); renderMeals(); renderTrain(); renderStack(); renderProfileCard();
   if(S && S.profile) $('avatar').textContent = P().name + ' · ' + (S.streak||0) + '🔥';
+  if(COMM){ renderTeamWeek(); renderTeamFeed(); } // reflect own just-logged training instantly
   const pn=$('pin-nudge'); if(pn) pn.style.display=(S && S.profile && !S.pin)?'':'none';
 }
 
@@ -1366,19 +1404,26 @@ function openModal(kind, arg){
   if(kind==='workout') sheet.innerHTML = `
     <h3>Log a Workout</h3>
     <div class="field"><label>Type</label><input id="f-type" placeholder="e.g. Leg Day, 5K Run"></div>
-    <div class="field"><label>Duration (min)</label><input id="f-dur" type="number" placeholder="45"></div>
+    <div class="fieldrow">
+      <div class="field"><label>Duration (min)</label><input id="f-dur" type="number" placeholder="45"></div>
+      <div class="field"><label>Date</label><input id="f-wkdate" type="date" value="${todayISO()}"></div>
+    </div>
     <button class="btn" onclick="saveWorkout()">Save Workout</button>`;
   if(kind==='weight'){
-    const now=new Date();
-    const tHM=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+    const editing = (arg!=null && S.weights && S.weights[arg]);
+    const e = editing ? S.weights[arg] : null;
+    const dObj = editing ? new Date(e.at) : new Date();
+    const dISO = editing ? isoOf(dObj) : todayISO();
+    const tHM = String(dObj.getHours()).padStart(2,'0')+':'+String(dObj.getMinutes()).padStart(2,'0');
     sheet.innerHTML = `
-    <h3>Log Weight</h3>
-    <div class="field"><label>Weight (lbs)</label><input id="f-w" type="number" step="0.1" placeholder="209.5"></div>
+    <h3>${editing?'Edit Weigh-in':'Log Weight'}</h3>
+    <div class="field"><label>Weight (lbs)</label><input id="f-w" type="number" step="0.1" placeholder="209.5" value="${editing?e.w:''}"></div>
     <div class="fieldrow">
-      <div class="field"><label>Date</label><input id="f-wdate" type="date" value="${todayISO()}"></div>
+      <div class="field"><label>Date</label><input id="f-wdate" type="date" value="${dISO}"></div>
       <div class="field"><label>Time</label><input id="f-wtime" type="time" value="${tHM}"></div>
     </div>
-    <button class="btn" onclick="saveWeight()">Save</button>`;
+    <button class="btn" onclick="saveWeight(${editing?arg:'null'})">${editing?'Save Changes':'Save'}</button>
+    ${editing?`<button class="btn ghost" style="margin-top:10px;color:var(--accent2);border-color:var(--accent2);" onclick="deleteWeight(${arg})">Delete Weigh-in</button>`:''}`;
   }
   if(kind==='profile'){
     const p = P();
@@ -1403,7 +1448,9 @@ function openModal(kind, arg){
       <button data-wv="all" onclick="setWeightView('all')">All</button>
     </div>
     <div class="chartwrap"><svg class="chart" id="wchart" viewBox="0 0 340 130" preserveAspectRatio="none"></svg></div>
-    <button class="btn ghost small" style="margin:10px 0 16px;" onclick="openModal('weight')">+ Log Weight</button>
+    <button class="btn ghost small" style="margin:10px 0 12px;" onclick="openModal('weight')">+ Log Weight</button>
+    <div class="field" style="margin-bottom:4px;"><label>Weigh-in history — tap to fix date or delete</label></div>
+    <div id="w-history" style="max-height:170px;overflow-y:auto;margin-bottom:16px;"></div>
     <button class="btn" onclick="saveProfile()">Save</button>`;
     weightView='week';
     renderWeightPanel();
@@ -1455,11 +1502,14 @@ function deleteMeal(index){
 function saveWorkout(){
   const type=$('f-type').value.trim(), dur=+$('f-dur').value||0;
   if(!type) return toast('Name it first!');
-  S.workouts.unshift({type, dur, emoji:'🏋️', when:stamp(), date:new Date().toISOString().slice(0,10)});
+  const date=$('f-wkdate').value || todayISO();
+  const when = date===todayISO() ? stamp() : dateStr(new Date(date+'T12:00:00'));
+  S.workouts.unshift({type, dur, emoji:'🏋️', when, date});
+  S.workouts.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   S.streak += 1;
-  store.save(); renderAll(); closeModal(); toast('Workout logged — streak '+S.streak+'! 🔥');
+  store.save(); renderAll(); closeModal(); toast('Workout logged ✓');
 }
-function saveWeight(){
+function saveWeight(editIndex){
   const w=+$('f-w').value;
   if(!w) return toast('Enter a weight');
   const dv=$('f-wdate').value, tv=$('f-wtime').value;
@@ -1470,9 +1520,16 @@ function saveWeight(){
     at=new Date(Y, M-1, D, h, mi).getTime();
   } else at=Date.now();
   S.weights = S.weights || [];
-  S.weights.push({w, at});
+  if(editIndex!=null && S.weights[editIndex]){ S.weights[editIndex]={w, at}; toast('Weigh-in updated ✓'); }
+  else { S.weights.push({w, at}); toast('Weight logged ✓'); }
   S.weights.sort((a,b)=>a.at-b.at);
-  store.save(); renderAll(); closeModal(); toast('Weight logged ✓');
+  store.save(); renderAll(); closeModal();
+}
+function deleteWeight(index){
+  if(index==null || !S.weights || !S.weights[index]) return;
+  if(!confirm('Delete this weigh-in?')) return;
+  S.weights.splice(index,1);
+  store.save(); renderAll(); closeModal(); toast('Weigh-in deleted');
 }
 function saveProfile(){
   const name=$('f-pname').value.trim();
