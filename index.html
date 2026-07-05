@@ -37,7 +37,7 @@
   }
   .logo{font-size:22px;font-weight:900;letter-spacing:2px;font-style:italic;}
   .logo span{color:var(--accent);}
-  .avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent4));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#0b0b0f;}
+  .avatar{height:32px;padding:0 13px;border-radius:16px;background:linear-gradient(135deg,var(--accent2),var(--accent4));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#0b0b0f;white-space:nowrap;}
   /* ---------- content ---------- */
   main{flex:1;overflow-y:auto;padding:4px 16px 90px;scroll-behavior:smooth;}
   .tab{display:none;animation:fadeIn .25s ease;}
@@ -783,7 +783,6 @@ function renderTeamWeek(){
       <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
       <div class="tw-info"><b>${esc(m.name)}${m.key===COMM.you?' <small>(you)</small>':''}</b><small>${sub}</small></div>
       <div class="tw-dots">${dots}</div>
-      <div class="tw-streak">${m.streak}🔥</div>
     </div>`;
   }).join('') + '<div class="tw-more">See the full feed →</div>';
 }
@@ -1167,6 +1166,7 @@ function renderProfileCard(){
 }
 
 function renderAll(){ renderHome(); renderMeals(); renderTrain(); renderStack(); renderProfileCard();
+  if(S && S.profile) $('avatar').textContent = P().name + ' · ' + (S.streak||0) + '🔥';
   const pn=$('pin-nudge'); if(pn) pn.style.display=(S && S.profile && !S.pin)?'':'none';
 }
 
@@ -1420,7 +1420,7 @@ function finishOnboard(){
 function personalize(){
   const p = P();
   $('hero-name').textContent = p.name+'.';
-  $('avatar').textContent = p.name.slice(0,2).toUpperCase();
+  $('avatar').textContent = p.name + ' · ' + (S.streak||0) + '🔥';
   $('chat-greet').textContent = 'Hey '+p.name+" — I'm your SPIN CLASS coach. (No, there are no bikes. Don't ask.) I can see today's meals, training, weight trend, and your stack schedule. Ask me anything. 🏋️";
 }
 
