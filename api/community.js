@@ -39,7 +39,7 @@ export default async function handler(req, res) {
           streak: st.streak || 0,
           lastActive: d.doc.updated || 0,
           workouts: (st.workouts || []).slice(0, 8).map(w => ({
-            type: w.type || 'Workout', dur: w.dur || 0, sets: w.setsDone || 0,
+            type: String(w.type || 'Workout').replace(/^Day \d+ — /, ''), dur: w.dur || 0, sets: w.setsDone || 0,
             vol: w.vol || 0, when: w.when || '', date: w.date || ''
           }))
         };
