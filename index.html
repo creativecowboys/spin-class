@@ -146,6 +146,14 @@
   .seg{display:flex;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px;margin:6px 0 12px;}
   .seg button{flex:1;background:none;border:none;color:var(--muted);font-weight:800;font-size:13px;padding:9px 0;border-radius:9px;cursor:pointer;letter-spacing:.5px;}
   .seg button.on{background:var(--accent);color:#0b0b0f;}
+  .cw-item{position:relative;overflow:hidden;border-radius:10px;}
+  .cw-del{position:absolute;top:0;right:0;bottom:0;width:84px;background:var(--accent2);color:#0b0b0f;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .cw-face{position:relative;background:var(--bg);transition:transform .18s ease;touch-action:pan-y;}
+  .bw-ex{background:var(--surface2);border-radius:10px;padding:10px 12px;margin-bottom:8px;}
+  .bw-ex-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .bw-ex-top b{font-size:13.5px;}
+  .bw-x{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;line-height:1;}
+  .bw-target{width:100%;margin-top:8px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;}
   .wh-row{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--border);cursor:pointer;}
   .wh-row:last-child{border-bottom:none;}
   .wh-w{font-weight:800;color:var(--text);font-size:14px;width:64px;}
@@ -191,7 +199,7 @@
   .modal.open{display:flex;}
   .sheet{
     width:100%;background:var(--surface);border-radius:24px 24px 0 0;padding:20px 20px calc(24px + env(safe-area-inset-bottom));
-    border-top:1px solid var(--border);animation:slideUp .25s ease;
+    border-top:1px solid var(--border);animation:slideUp .25s ease;max-height:90vh;overflow-y:auto;
   }
   @keyframes slideUp{from{transform:translateY(40px);opacity:.5;}to{transform:none;opacity:1;}}
   .sheet h3{font-size:18px;font-weight:900;margin-bottom:16px;}
@@ -1042,6 +1050,17 @@ function renderMeals(){
     </div>`).join('') : '<div class="empty">Nothing logged. Fuel up. 🍳</div>';
 }
 
+/* =============== workouts: program days + user-built custom workouts =============== */
+/* a schedule ref is either a number (PROGRAM index) or a "c:<id>" string (custom) */
+function isCustomRef(ref){ return typeof ref==='string' && ref.slice(0,2)==='c:'; }
+function customById(id){ return (S.customWorkouts||[]).find(w=>w.id===id) || null; }
+function workoutFor(ref){
+  if(ref==null) return null;
+  if(isCustomRef(ref)) return customById(ref.slice(2));
+  return PROGRAM[ref] || null;
+}
+function newCustomId(){ return 'w'+Array.from(crypto.getRandomValues(new Uint8Array(6)),b=>b.toString(16).padStart(2,'0')).join(''); }
+
 /* =============== week calendar =============== */
 let weekOff = 0;
 function todaysDay(){
@@ -1070,26 +1089,102 @@ function renderWeek(){
       <div class="dn">${d.toLocaleDateString('en-US',{weekday:'short'})}</div>
       <div class="dt">${d.getDate()}</div>
       ${done?'<div class="ck">✓</div>':''}
-      <div class="sess${assigned==null?' none':''}">${assigned!=null?PROGRAM[assigned].name:'—'}</div>
+      <div class="sess${assigned==null?' none':''}">${assigned!=null?esc((workoutFor(assigned)||{name:'—'}).name):'—'}</div>
     </div>`;
   }).join('');
 }
 function openDayAssign(iso){
   const cur = S.schedule ? S.schedule[iso] : null;
   const d = new Date(iso+'T12:00:00');
+  const customRows = (S.customWorkouts||[]).map(w=>{
+    const ref = 'c:'+w.id;
+    const sel = cur===ref;
+    return `<div class="cw-item" data-id="${w.id}" data-iso="${iso}">
+      <div class="cw-del" onclick="event.stopPropagation();deleteCustomWorkout('${w.id}')">Delete</div>
+      <div class="cw-face exrow" onclick="assignDay('${iso}','${ref}')"><div><b>${esc(w.name)}</b><small>${(w.ex||[]).length} exercises · yours</small></div><div class="go">${sel?'✓':'+'}</div></div>
+    </div>`;
+  }).join('');
   $('sheet').innerHTML = `<h3>${d.toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'})}</h3>
     <div class="exlist">` +
     PROGRAM.map((p,i)=>`<div class="exrow" onclick="assignDay('${iso}',${i})"><div><b>Day ${i+1} — ${esc(p.name)}</b><small>${esc(p.sub)}</small></div><div class="go">${cur===i?'✓':'+'}</div></div>`).join('') +
+    customRows +
     `</div>
+    <button class="btn ghost" style="margin-top:10px;" onclick="openBuilder('${iso}')">+ Build a Workout</button>
     ${cur!=null?`<button class="btn ghost small" style="margin-top:10px;" onclick="assignDay('${iso}',null)">Clear This Day</button>`:''}
-    ${(iso===todayISO() && cur!=null)?`<button class="btn" style="margin-top:10px;" onclick="closeModal();startWorkout(${cur})">▶ Start ${esc(PROGRAM[cur].name)} Now</button>`:''}`;
+    ${(iso===todayISO() && cur!=null && workoutFor(cur))?`<button class="btn" style="margin-top:10px;" onclick="closeModal();startWorkout(${typeof cur==='string'?`'${cur}'`:cur})">▶ Start ${esc(workoutFor(cur).name)} Now</button>`:''}`;
+  $('modal').classList.add('open');
+  setTimeout(wireSwipe, 30);
+}
+/* swipe custom-workout rows left to reveal Delete (pointer events → works touch + mouse) */
+function wireSwipe(){
+  document.querySelectorAll('.cw-item .cw-face').forEach(face=>{
+    if(face._wired) return; face._wired=true;
+    let x0=null, open=false, moved=false;
+    const setX=px=>{ face.style.transform='translateX('+px+'px)'; };
+    face.addEventListener('pointerdown', e=>{ x0=e.clientX; moved=false; face.style.transition='none'; });
+    face.addEventListener('pointermove', e=>{
+      if(x0==null) return;
+      let dx=e.clientX-x0; if(Math.abs(dx)>6) moved=true;
+      dx=Math.max(-84, Math.min(0, dx + (open?-84:0)));
+      setX(dx);
+    });
+    const end=()=>{ if(x0==null) return; face.style.transition=''; const m=new WebKitCSSMatrix(getComputedStyle(face).transform); open = m.m41 < -42; setX(open?-84:0); x0=null; };
+    face.addEventListener('pointerup', end);
+    face.addEventListener('pointercancel', end);
+    // block the assign tap if the user was swiping
+    face.addEventListener('click', e=>{ if(moved){ e.stopPropagation(); e.preventDefault(); } }, true);
+  });
+}
+function deleteCustomWorkout(id){
+  if(!confirm('Delete this workout? It will be removed from any days it was assigned to.')) return;
+  S.customWorkouts = (S.customWorkouts||[]).filter(w=>w.id!==id);
+  // unassign it from any scheduled days
+  const ref='c:'+id;
+  Object.keys(S.schedule||{}).forEach(k=>{ if(S.schedule[k]===ref) delete S.schedule[k]; });
+  store.save(); renderTrain(); renderHome();
+  closeModal(); toast('Workout deleted');
+}
+function assignDay(iso, ref){
+  S.schedule = S.schedule || {};
+  if(ref==null) delete S.schedule[iso]; else S.schedule[iso]=ref;
+  store.save(); closeModal(); renderTrain(); renderHome();
+  const w = workoutFor(ref);
+  toast(ref==null?'Day cleared':(w?w.name:'Workout')+' scheduled ✓');
+}
+
+/* =============== build-a-workout =============== */
+let builderState = null;
+function openBuilder(iso){
+  builderState = {iso, name:'', ex:[]};
+  renderBuilder();
   $('modal').classList.add('open');
 }
-function assignDay(iso, i){
-  S.schedule = S.schedule || {};
-  if(i==null) delete S.schedule[iso]; else S.schedule[iso]=i;
-  store.save(); closeModal(); renderTrain(); renderHome();
-  toast(i==null?'Day cleared':PROGRAM[i].name+' scheduled ✓');
+function renderBuilder(){
+  const b=builderState; if(!b) return;
+  $('sheet').innerHTML = `<h3>Build a Workout</h3>
+    <div class="field"><label>Workout name</label><input id="bw-name" placeholder="e.g. My Arm Day" value="${esc(b.name)}" oninput="builderState.name=this.value"></div>
+    <div class="field" style="margin-bottom:6px;"><label>Exercises</label></div>
+    <div id="bw-list">${b.ex.length ? b.ex.map((x,i)=>`
+      <div class="bw-ex">
+        <div class="bw-ex-top"><b>${esc(x.name)}</b><button class="bw-x" onclick="builderRemove(${i})">✕</button></div>
+        <input class="bw-target" value="${esc(x.target)}" placeholder="3 × 8–12" oninput="builderState.ex[${i}].target=this.value">
+      </div>`).join('') : '<div class="empty" style="padding:8px 4px;">No exercises yet — add some below.</div>'}</div>
+    <button class="btn ghost" style="margin-top:8px;" onclick="openPicker('build')">+ Add Exercise</button>
+    <button class="btn" style="margin-top:14px;" onclick="saveCustomWorkout()">Save Workout</button>`;
+}
+function builderRemove(i){ builderState.ex.splice(i,1); renderBuilder(); }
+function saveCustomWorkout(){
+  const b=builderState; if(!b) return;
+  const name=(b.name||'').trim();
+  if(!name) return toast('Name your workout');
+  if(!b.ex.length) return toast('Add at least one exercise');
+  S.customWorkouts = S.customWorkouts || [];
+  const id=newCustomId();
+  S.customWorkouts.push({id, name, sub:'Custom', ex: b.ex.map(x=>[x.name, (x.target||'').trim()||'3 × 8–12', x.rest||'90 s'])});
+  store.save();
+  const iso=b.iso; builderState=null;
+  toast('"'+name+'" saved ✓');
+  openDayAssign(iso); // back to the picker — the new workout is now in the list
 }
 let openDay = null;
 function renderProgram(){
@@ -1134,7 +1229,7 @@ function renderTrain(){
   }
   $('train-normal').style.display='block';
   $('train-active').style.display='none';
-  const ti = todaysDay(), tp = PROGRAM[ti];
+  const ti = todaysDay(), tp = workoutFor(ti) || PROGRAM[0];
   const scheduled = S.schedule && S.schedule[todayISO()]!=null;
   const doneToday = S.workouts.some(w=>w.date===todayISO() && w.day===ti);
   $('t-today-label').textContent = doneToday ? 'Done today' : (scheduled ? 'Scheduled for today' : "Today's workout");
@@ -1160,11 +1255,10 @@ function renderTrain(){
 /* =============== edit a finished workout =============== */
 function reopenWorkout(wi){
   const w = S.workouts[wi];
-  let dayIdx = (w.day!=null) ? w.day : (parseInt((w.type.match(/^Day (\d+)/)||[])[1],10)-1);
-  if(isNaN(dayIdx) || dayIdx<0 || dayIdx>6) dayIdx = null;
+  const def = workoutFor(w.day); // resolves program day OR custom workout
   const last = S.lastLifts || {};
   const exs = [];
-  const tmpl = dayIdx!=null ? PROGRAM[dayIdx].ex.filter(e=>e[1]!=='—') : [];
+  const tmpl = def ? def.ex.filter(e=>e[1]!=='—') : [];
   tmpl.forEach(e=>{
     const d = (w.detail||[]).find(x=>x.name===e[0]);
     exs.push({name:e[0], target:e[1], rest:e[2], big:!!e[3], lastW:last[e[0]]||'',
@@ -1175,17 +1269,18 @@ function reopenWorkout(wi){
       exs.push({name:d.name, target:'3 × 8–12', rest:'90 s', big:false, lastW:last[d.name]||'',
         sets:d.sets.map(s=>({w:s.w, r:s.r, done:true}))});
   });
-  S.active = {day: dayIdx==null?0:dayIdx, started: Date.now(), editIdx: wi, ex: exs};
+  S.active = {ref: (w.day!=null?w.day:0), name: w.type, started: Date.now(), editIdx: wi, ex: exs};
   store.save(); go('train'); renderTrain(); $('main').scrollTop=0;
   toast('Editing '+w.type+' — add or fix sets, then Save');
 }
 
 /* =============== live workout =============== */
-function startWorkout(i){
-  const p = PROGRAM[i];
+function startWorkout(ref){
+  const p = workoutFor(ref);
+  if(!p) return toast('Workout not found');
   const last = S.lastLifts || {};
   S.active = {
-    day:i, started:Date.now(),
+    ref, name:p.name, started:Date.now(),
     ex: p.ex.filter(e=>e[1]!=='—').map(e=>{
       const n = parseInt(e[1])||3;
       const lw = last[e[0]] ? last[e[0]] : '';
@@ -1196,13 +1291,13 @@ function startWorkout(i){
   store.save(); renderTrain(); $('main').scrollTop=0;
 }
 function renderActive(){
-  const a = S.active; const p = PROGRAM[a.day];
+  const a = S.active;
   const doneSets = a.ex.reduce((t,x)=>t+x.sets.filter(s=>s.done).length,0);
   const allSets = a.ex.reduce((t,x)=>t+x.sets.length,0);
   const editing = a.editIdx != null;
   $('train-active').innerHTML = `
     <div class="wo-head">
-      <div class="wn">${editing?'Editing: ':''}Day ${a.day+1} — <em>${p.name}</em></div>
+      <div class="wn">${editing?'Editing: ':''}<em>${esc(a.name||'Workout')}</em></div>
       <div class="wt">${editing ? 'Past session — changes save in place' : '<span id="wo-elapsed">0:00</span> · '+doneSets+'/'+allSets+' sets done'}</div>
       <div class="wo-actions">
         <button class="btn" onclick="finishWorkout()">${editing?'Save Changes':'Finish'}</button>
@@ -1279,6 +1374,11 @@ function renderPickList(){
 function pickExercise(i){
   const e=EXDB[i];
   const last=(S.lastLifts||{})[e[0]]||'';
+  if(pickMode==='build'){
+    builderState.ex.push({name:e[0], target:'3 × 8–12', rest:'90 s'});
+    renderBuilder(); // stay in the modal, back on the builder
+    return;
+  }
   if(pickMode==='add'){
     S.active.ex.push({name:e[0], target:'3 × 8–12', rest:'90 s', big:false, lastW:last,
       sets:[{w:'',r:'',done:false},{w:'',r:'',done:false},{w:'',r:'',done:false}]});
@@ -1309,7 +1409,7 @@ function tickElapsed(){
 setInterval(tickElapsed, 1000);
 function cancelWorkout(){ S.active=null; store.save(); renderTrain(); }
 function finishWorkout(){
-  const a = S.active; const p = PROGRAM[a.day];
+  const a = S.active;
   const dur = Math.max(1, Math.round((Date.now()-a.started)/60000));
   let vol = 0, setsDone = 0;
   const detail = [];
@@ -1332,15 +1432,15 @@ function finishWorkout(){
     toast('Workout updated — '+setsDone+' sets, '+vol.toLocaleString()+' lb ✓');
     return;
   }
-  S.workouts.unshift({type:p.name, day:a.day, dur, emoji:'🏋️', when:stamp(), date:todayISO(), vol, setsDone, detail});
+  S.workouts.unshift({type:a.name, day:a.ref, dur, emoji:'🏋️', when:stamp(), date:todayISO(), vol, setsDone, detail});
   S.streak += 1;
   S.lastDone = S.lastDone || {};
-  S.lastDone[a.day] = dateStr();
-  if((S.programDay||0)===a.day) S.programDay = (a.day+1)%7;
-  openDay = S.programDay;
+  S.lastDone[a.ref] = dateStr();
+  if(typeof a.ref==='number' && (S.programDay||0)===a.ref) S.programDay = (a.ref+1)%7;
+  if(typeof S.programDay==='number') openDay = S.programDay;
   S.active = null;
   store.save(); renderAll();
-  toast(p.name+' done — '+setsDone+' sets, '+vol.toLocaleString()+' lb moved! 🔥');
+  toast(a.name+' done — '+setsDone+' sets, '+vol.toLocaleString()+' lb moved! 🔥');
 }
 
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -1619,7 +1719,7 @@ function coachReply(q){
       ? `You have <b>${due.length} unchecked</b>: ${due.map(d=>`${d.name} at ${fmtTime(d.hour,d.min)}`).join(', ')}. ${due.some(d=>(d.hour*60+d.min)<(new Date().getHours()*60+new Date().getMinutes()))?'One is past its scheduled time — worth knocking out now if your protocol allows.':'You\'re on schedule.'}`
       : `Stack's fully checked off today. Clean sweep. ✓`;
   if(t.includes('workout')||t.includes('train')||t.includes('tomorrow')||t.includes('gym')){
-    const cur = PROGRAM[todaysDay()];
+    const cur = workoutFor(todaysDay()) || PROGRAM[0];
     const lead = cur.ex[0];
     return `You're on <b>${cur.name}</b> (${cur.sub}). ${cur.big?`Lead with the heavy <b>${cur.big.toLowerCase()}</b>: ${lead[0]} ${lead[1]}, rest ${lead[2]}. Remember — top of the rep range on all sets at RPE ≤ 8 before adding load.`:`Open with ${lead[0]} ${lead[1]} and work down the list.`} It's all laid out in the Train tab — hit "Done" when you finish and I'll queue up the next one.`;
   }
@@ -1667,7 +1767,7 @@ function renderChat(){
 }
 function buildContext(){
   const {cal,pro,carb,fat} = totals(); const p = P();
-  const prog = PROGRAM[todaysDay()];
+  const prog = workoutFor(todaysDay()) || PROGRAM[0];
   return JSON.stringify({
     name: p.name,
     calorieTarget: p.calTarget, proteinTarget: p.proTarget, carbTarget: carbTarget(), fatTarget: fatTarget(),
@@ -1676,7 +1776,7 @@ function buildContext(){
     currentWeightLbs: S.weights.length ? S.weights[S.weights.length-1].w : null, goalWeightLbs: p.goalWeight,
     recentWeights: S.weights.slice(-7).map(e=>({lbs:e.w, on:new Date(e.at).toLocaleDateString('en-US',{month:'short',day:'numeric'})})),
     trainingStreakDays: S.streak,
-    currentProgramDay: 'Day '+(todaysDay()+1)+' — '+prog.name+' ('+prog.sub+')',
+    currentProgramDay: prog.name+' ('+prog.sub+')',
     weekSchedule: S.schedule || {},
     todaysExercises: prog.ex.map(e=>e[0]+' '+e[1]),
     workoutInProgress: !!S.active,
