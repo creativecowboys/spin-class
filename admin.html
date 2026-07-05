@@ -214,7 +214,8 @@ function renderMembers(){
   $('mcount').textContent = MEMBERS.length+' member'+(MEMBERS.length===1?'':'s');
   $('members').innerHTML = MEMBERS.length ? MEMBERS.map((m,i)=>{
     const s=m.state||{}; const p=s.profile||{};
-    const w=(s.weights&&s.weights.length)?s.weights[s.weights.length-1]:null;
+    const _lw=(s.weights&&s.weights.length)?s.weights[s.weights.length-1]:null;
+    const w=_lw==null?null:(typeof _lw==='number'?_lw:_lw.w);
     const wos=(s.workouts||[]);
     return `<div class="card">
       <div class="mhead" onclick="toggleM(${i})">
@@ -244,7 +245,7 @@ function renderMembers(){
             ${wo.detail?`<div class="sets">${wo.detail.map(d=>esc(d.name)+': '+d.sets.map(x=>x.w+'×'+x.r).join(', ')).join('<br>')}</div>`:''}
           </div>`).join('') || '<div class="muted">Nothing logged yet.</div>'}
         <div class="sect">Weights</div>
-        ${(s.weights||[]).slice(-10).map(x=>`<span class="pill"><b>${x}</b> lbs</span>`).join('')||'<span class="muted">None.</span>'}
+        ${(s.weights||[]).slice(-10).map(x=>{const v=typeof x==='number'?x:x.w; const d=(x&&x.at)?' · '+new Date(x.at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''; return `<span class="pill"><b>${v}</b> lbs${d}</span>`;}).join('')||'<span class="muted">None.</span>'}
         <div class="sect">Recent Meals</div>
         ${(s.meals||[]).slice(-10).reverse().map(x=>`<span class="pill"><b>${esc(x.name)}</b> ${x.cal} kcal · ${x.pro}P · ${x.carb||0}C · ${x.fat||0}F${x.date?' · '+x.date:''}</span>`).join('')||'<span class="muted">None.</span>'}
         <div class="sect">Stack</div>

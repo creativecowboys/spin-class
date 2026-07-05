@@ -596,7 +596,7 @@ async function loadRemote(){
       const sr = await fetch('/api/sync?id='+S.id).then(r=>r.ok?r.json():null).catch(()=>null);
       if(sr && sr.state && (sr.updated||0) > (S.updatedAt||0)+2000){
         S = sr.state;
-        if([scrubSeed(), stripDayNames()].some(Boolean)) store.save();
+        if([scrubSeed(), migrateWeights(), stripDayNames()].some(Boolean)) store.save();
         else try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
         personalize(); renderAll(); renderChat();
       }
@@ -627,6 +627,20 @@ function stripDayNames(){
     if(w.type && /^Day \d+ — /.test(w.type)){ w.type = w.type.replace(/^Day \d+ — /,''); changed = true; }
     if(w.emoji === '💪'){ w.emoji = '🏋️'; changed = true; }
   });
+  return changed;
+}
+/* weights used to be a plain [number] list; upgrade to dated entries {w, at} (ms epoch).
+   Legacy entries get synthesized timestamps spread one-per-day ending today. */
+function migrateWeights(){
+  if(!S || !Array.isArray(S.weights)) return false;
+  let changed=false;
+  const day=86400000, base=new Date(); base.setHours(12,0,0,0);
+  const n=S.weights.length;
+  S.weights = S.weights.map((x,i)=>{
+    if(typeof x==='number'){ changed=true; return {w:x, at: base.getTime()-(n-1-i)*day}; }
+    return x;
+  });
+  if(changed) S.weights.sort((a,b)=>a.at-b.at);
   return changed;
 }
 
@@ -701,7 +715,7 @@ const EXDB=[["Band Concentration Curl","Band","Biceps"],["Band Curl","Band","Bic
 let S = store.load();
 const needsOnboard = !S || !S.profile;
 if(!S) S = {meals:[], workouts:[], weights:[], streak:0, stack:[]};
-if([scrubSeed(), stripDayNames()].some(Boolean)) try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
+if([scrubSeed(), migrateWeights(), stripDayNames()].some(Boolean)) try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
 const P = () => S.profile || {name:'Dave', calTarget:2400, proTarget:180, goalWeight:null};
 
 /* =============== helpers =============== */
@@ -774,8 +788,9 @@ function renderHome(){
 }
 
 function drawChart(w){
+  const svg = $('wchart'); if(!svg) return;
+  if(!w || !w.length){ svg.innerHTML=''; return; }
   if(w.length<2) w=[w[0],w[0]];
-  const svg = $('wchart');
   const min = Math.min(...w)-.6, max = Math.max(...w)+.6;
   const X = i => 10 + i*(320/(w.length-1));
   const Y = v => 118 - ((v-min)/(max-min))*106;
@@ -791,17 +806,32 @@ function drawChart(w){
     w.map((v,i)=>`<circle cx="${X(i)}" cy="${Y(v)}" r="${i===w.length-1?4.5:2.5}" fill="${i===w.length-1?'#ccff00':'#555'}"/>`).join('');
 }
 
+let weightView = 'week'; // week | month | year | all
+function setWeightView(v){ weightView=v; renderWeightPanel(); }
+function weightRangeMs(v){ return v==='week'?7*864e5 : v==='month'?31*864e5 : v==='year'?366*864e5 : Infinity; }
+function weightsInView(all){
+  if(weightView==='all') return all;
+  const cutoff=Date.now()-weightRangeMs(weightView);
+  return all.filter(e=>e.at>=cutoff);
+}
 function renderWeightPanel(){
-  const w = S.weights || [];
-  if(!w.length){ $('w-now').textContent='—'; $('w-delta').textContent='no weigh-ins yet'; return; }
-  const cur = w[w.length-1];
-  $('w-now').textContent = cur.toFixed(1);
-  const delta = cur - w[0];
-  const p = P();
-  $('w-delta').textContent = (delta<=0?'▼ ':'▲ ')+Math.abs(delta).toFixed(1)+' lbs'
-    + (p.goalWeight ? ' · goal '+p.goalWeight : '');
-  $('w-delta').style.color = delta<=0 ? 'var(--accent)' : 'var(--accent2)';
-  drawChart(w);
+  const sel=$('w-viewsel');
+  if(sel) sel.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.wv===weightView));
+  const all=(S.weights||[]).slice().sort((a,b)=>a.at-b.at);
+  const p=P();
+  if(!all.length){ $('w-now').textContent='—'; $('w-delta').textContent='no weigh-ins yet'; drawChart([]); return; }
+  const cur=all[all.length-1].w;
+  $('w-now').textContent=cur.toFixed(1);
+  const view=weightsInView(all);
+  if(view.length>=2){
+    const delta=view[view.length-1].w-view[0].w;
+    $('w-delta').textContent=(delta<=0?'▼ ':'▲ ')+Math.abs(delta).toFixed(1)+' lbs'+(p.goalWeight?' · goal '+p.goalWeight:'');
+    $('w-delta').style.color=delta<=0?'var(--accent)':'var(--accent2)';
+  } else {
+    $('w-delta').textContent=(view.length?'1 weigh-in':'no weigh-ins')+' this '+(weightView==='all'?'lifetime':weightView)+(p.goalWeight?' · goal '+p.goalWeight:'');
+    $('w-delta').style.color='var(--muted)';
+  }
+  drawChart(view.map(e=>e.w));
 }
 
 /* =============== team / community =============== */
@@ -1301,8 +1331,8 @@ function toggleDose(i){
 function renderProfileCard(){
   const p = P();
   $('p-name').textContent = p.name;
-  const w = (S.weights && S.weights.length) ? S.weights[S.weights.length-1] : null;
-  $('p-meta').textContent = (w ? w.toFixed(1)+' lbs'+(p.goalWeight?' · goal '+p.goalWeight:'') : 'no weigh-ins yet')
+  const wv = (S.weights && S.weights.length) ? S.weights[S.weights.length-1].w : null;
+  $('p-meta').textContent = (wv!=null ? wv.toFixed(1)+' lbs'+(p.goalWeight?' · goal '+p.goalWeight:'') : 'no weigh-ins yet')
     + ' · targets '+p.calTarget+' kcal / '+p.proTarget+'g protein';
 }
 
@@ -1338,10 +1368,18 @@ function openModal(kind, arg){
     <div class="field"><label>Type</label><input id="f-type" placeholder="e.g. Leg Day, 5K Run"></div>
     <div class="field"><label>Duration (min)</label><input id="f-dur" type="number" placeholder="45"></div>
     <button class="btn" onclick="saveWorkout()">Save Workout</button>`;
-  if(kind==='weight') sheet.innerHTML = `
+  if(kind==='weight'){
+    const now=new Date();
+    const tHM=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+    sheet.innerHTML = `
     <h3>Log Weight</h3>
     <div class="field"><label>Weight (lbs)</label><input id="f-w" type="number" step="0.1" placeholder="209.5"></div>
+    <div class="fieldrow">
+      <div class="field"><label>Date</label><input id="f-wdate" type="date" value="${todayISO()}"></div>
+      <div class="field"><label>Time</label><input id="f-wtime" type="time" value="${tHM}"></div>
+    </div>
     <button class="btn" onclick="saveWeight()">Save</button>`;
+  }
   if(kind==='profile'){
     const p = P();
     sheet.innerHTML = `
@@ -1358,9 +1396,16 @@ function openModal(kind, arg){
       <div class="w"><span id="w-now">—</span> <small>lbs</small></div>
       <div class="delta" id="w-delta"></div>
     </div>
+    <div class="seg" id="w-viewsel" style="margin:8px 0 10px;">
+      <button class="on" data-wv="week" onclick="setWeightView('week')">Week</button>
+      <button data-wv="month" onclick="setWeightView('month')">Month</button>
+      <button data-wv="year" onclick="setWeightView('year')">Year</button>
+      <button data-wv="all" onclick="setWeightView('all')">All</button>
+    </div>
     <div class="chartwrap"><svg class="chart" id="wchart" viewBox="0 0 340 130" preserveAspectRatio="none"></svg></div>
     <button class="btn ghost small" style="margin:10px 0 16px;" onclick="openModal('weight')">+ Log Weight</button>
     <button class="btn" onclick="saveProfile()">Save</button>`;
+    weightView='week';
     renderWeightPanel();
   }
   if(kind==='compound'){
@@ -1417,7 +1462,16 @@ function saveWorkout(){
 function saveWeight(){
   const w=+$('f-w').value;
   if(!w) return toast('Enter a weight');
-  S.weights.push(w); if(S.weights.length>14) S.weights.shift();
+  const dv=$('f-wdate').value, tv=$('f-wtime').value;
+  let at;
+  if(dv){
+    const [Y,M,D]=dv.split('-').map(Number);
+    let h=12,mi=0; if(tv){ const [th,tm]=tv.split(':').map(Number); h=th||0; mi=tm||0; }
+    at=new Date(Y, M-1, D, h, mi).getTime();
+  } else at=Date.now();
+  S.weights = S.weights || [];
+  S.weights.push({w, at});
+  S.weights.sort((a,b)=>a.at-b.at);
   store.save(); renderAll(); closeModal(); toast('Weight logged ✓');
 }
 function saveProfile(){
@@ -1472,8 +1526,8 @@ function coachReply(q){
   const remaining = Math.max(0, p.calTarget-cal), proLeft = Math.max(0, p.proTarget-pro);
   const _td=todayDOW(), _ti=todayISO();
   const due = S.stack.filter(x=>itemDays(x).includes(_td) && !(x.takenOn && x.takenOn[_ti]));
-  const cur = S.weights.length ? S.weights[S.weights.length-1] : 0;
-  const delta = (cur - (S.weights[0]||cur)).toFixed(1);
+  const cur = S.weights.length ? S.weights[S.weights.length-1].w : 0;
+  const delta = (cur - (S.weights.length ? S.weights[0].w : cur)).toFixed(1);
   const t = q.toLowerCase();
 
   if(t.includes('dinner')||t.includes('eat')||t.includes('meal')||t.includes('food'))
@@ -1537,8 +1591,8 @@ function buildContext(){
     calorieTarget: p.calTarget, proteinTarget: p.proTarget,
     todayCalories: cal, todayProtein: pro,
     mealsToday: mealsToday().map(m=>`${m.name} (${m.cal} kcal, ${m.pro}g protein, ${m.carb||0}g carbs, ${m.fat||0}g fat, ${m.time})`),
-    currentWeightLbs: S.weights[S.weights.length-1], goalWeightLbs: p.goalWeight,
-    recentWeights: S.weights.slice(-7),
+    currentWeightLbs: S.weights.length ? S.weights[S.weights.length-1].w : null, goalWeightLbs: p.goalWeight,
+    recentWeights: S.weights.slice(-7).map(e=>({lbs:e.w, on:new Date(e.at).toLocaleDateString('en-US',{month:'short',day:'numeric'})})),
     trainingStreakDays: S.streak,
     currentProgramDay: 'Day '+(todaysDay()+1)+' — '+prog.name+' ('+prog.sub+')',
     weekSchedule: S.schedule || {},
@@ -1621,7 +1675,7 @@ async function adoptAccount(id){
   if(!doc || !doc.state) return toast('Couldn\'t load that account — try again');
   S = doc.state;
   S.id = id;
-  scrubSeed(); stripDayNames();
+  scrubSeed(); migrateWeights(); stripDayNames();
   store.save();
   personalize(); renderAll(); renderChat(); loadCommunity();
   $('onboard').classList.remove('open');
@@ -1634,7 +1688,7 @@ function finishOnboard(){
   const gw=+$('ob-gw').value || null;
   const cal=+$('ob-cal').value || 2400;
   const pro=+$('ob-pro').value || 180;
-  S = {meals:[], workouts:[], weights:[w], streak:0, stack:[]};
+  S = {meals:[], workouts:[], weights:[{w, at:Date.now()}], streak:0, stack:[]};
   S.profile = {name, goalWeight:gw, calTarget:cal, proTarget:pro};
   S.pin = $('ob-pin').value.replace(/\D/g,'');
   S.id = randId();
