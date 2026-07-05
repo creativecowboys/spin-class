@@ -232,6 +232,7 @@ function renderMembers(){
           <div class="field"><label>Protein target</label><input id="pp-${i}" type="number" value="${p.proTarget||180}"></div>
           <div class="field"><label>Goal wt</label><input id="pg-${i}" type="number" step="0.1" value="${p.goalWeight||''}"></div>
           <div class="field"><label>Streak</label><input id="ps-${i}" type="number" value="${s.streak||0}"></div>
+          <div class="field"><label>PIN (blank = none)</label><input id="pw-${i}" maxlength="4" value="${esc(String(s.pin||''))}"></div>
           <button class="btn small" onclick="saveMember(${i})">Save</button>
           <button class="btn danger small" onclick="delMember(${i})">Delete</button>
         </div>
@@ -261,6 +262,7 @@ async function saveMember(i){
   s.profile.proTarget=+$('pp-'+i).value||180;
   s.profile.goalWeight=+$('pg-'+i).value||null;
   s.streak=+$('ps-'+i).value||0;
+  s.pin=$('pw-'+i).value.replace(/\D/g,'').slice(0,4);
   s.updatedAt=Date.now();
   await api('/api/admin-user',{method:'PUT',body:JSON.stringify({id:m.id,state:s})});
   toast((s.profile.name||'Member')+' updated ✓');

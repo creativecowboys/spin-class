@@ -302,6 +302,11 @@
         <div><b id="dosealert-title">Dose due</b><small id="dosealert-sub"></small></div>
       </div>
 
+      <div class="dosealert" id="pin-nudge" onclick="openModal('profile')" style="display:none;">
+        <div class="dot"></div>
+        <div><b>Set your PIN 🔐</b><small>Your name + a 4-digit PIN logs you in on any device — set one so your data can follow you.</small></div>
+      </div>
+
       <h2 class="section">Today's Targets</h2>
       <div class="card">
         <div class="goal" style="margin-bottom:14px;">
@@ -437,9 +442,25 @@
       <div class="ob-sub">SPIN CLASS tracks your meals, training, weight, and stack — with an AI coach that actually knows your numbers. Takes 30 seconds to set up.</div>
       <div class="ob-body">
         <div class="field"><label>What do we call you?</label><input id="ob-name" placeholder="First name" autocomplete="off"></div>
+        <div class="field"><label>Pick a 4-digit PIN</label><input id="ob-pin" type="tel" inputmode="numeric" maxlength="4" placeholder="e.g. 4242" autocomplete="off"></div>
+        <div class="ob-sub" style="margin-bottom:0;">Your name + PIN is your login — it gets your data back on any phone or browser.</div>
       </div>
       <div class="ob-dots"><i class="on"></i><i></i><i></i><i></i></div>
       <button class="btn" onclick="obNext(0)">Let's Go</button>
+      <button class="btn ghost" style="margin-top:10px;" onclick="obGo('r')">Been here before? Log back in</button>
+    </div>
+
+    <div class="ob-step" id="ob-r">
+      <div class="ob-kicker">Welcome back</div>
+      <div class="ob-title">Pick up where<br>you <em>left off.</em></div>
+      <div class="ob-sub">Enter the name you signed up with and your 4-digit PIN. Never set a PIN? Leave it blank — we'll get you one after.</div>
+      <div class="ob-body">
+        <div class="field"><label>Name</label><input id="r-name" placeholder="First name" autocomplete="off"></div>
+        <div class="field"><label>PIN</label><input id="r-pin" type="tel" inputmode="numeric" maxlength="4" placeholder="4 digits (blank if none)" autocomplete="off"></div>
+        <div id="r-picks"></div>
+      </div>
+      <button class="btn" id="r-btn" onclick="restoreAccount()">Get My Data Back</button>
+      <button class="btn ghost" style="margin-top:10px;" onclick="obGo(0)">← Back</button>
     </div>
 
     <div class="ob-step" id="ob-1">
@@ -1040,7 +1061,9 @@ function toggleDose(i){
   if(S.stack[i].taken) toast(S.stack[i].name+' logged ✓');
 }
 
-function renderAll(){ renderHome(); renderMeals(); renderTrain(); renderStack(); }
+function renderAll(){ renderHome(); renderMeals(); renderTrain(); renderStack();
+  const pn=$('pin-nudge'); if(pn) pn.style.display=(S && S.profile && !S.pin)?'':'none';
+}
 
 /* =============== modals =============== */
 function openModal(kind){
@@ -1072,6 +1095,7 @@ function openModal(kind){
       <div class="field"><label>Protein (g) / day</label><input id="f-ppro" type="number" value="${p.proTarget}"></div>
     </div>
     <div class="field"><label>Goal weight (lbs)</label><input id="f-pgw" type="number" step="0.1" value="${p.goalWeight||''}"></div>
+    <div class="field"><label>4-digit PIN — your name + PIN logs you in on any device</label><input id="f-ppin" type="tel" inputmode="numeric" maxlength="4" value="${esc(String(S.pin||''))}" placeholder="e.g. 4242" autocomplete="off"></div>
     <button class="btn" onclick="saveProfile()">Save</button>`;
   }
   if(kind==='compound') sheet.innerHTML = `
@@ -1114,6 +1138,9 @@ function saveProfile(){
   S.profile.calTarget = +$('f-pcal').value || 2400;
   S.profile.proTarget = +$('f-ppro').value || 180;
   S.profile.goalWeight = +$('f-pgw').value || null;
+  const pin = $('f-ppin').value.replace(/\D/g,'');
+  if(pin && pin.length!==4) return toast('PIN must be 4 digits');
+  if(pin) S.pin = pin;
   store.save(); personalize(); renderAll(); closeModal(); toast('Profile updated ✓');
 }
 function saveCompound(){
@@ -1226,10 +1253,40 @@ function obNext(n){
   if(n===0){
     const name=$('ob-name').value.trim();
     if(!name) return toast('Tell us your name!');
+    if($('ob-pin').value.replace(/\D/g,'').length!==4) return toast('Pick a 4-digit PIN');
     $('ob-final-name').textContent = name+'.';
   }
   if(n===1 && !(+$('ob-w').value)) return toast('Enter your current weight');
   obGo(n+1);
+}
+
+/* =============== restore (name + PIN login) =============== */
+async function restoreAccount(){
+  const name=$('r-name').value.trim();
+  const pin=$('r-pin').value.replace(/\D/g,'');
+  if(!name) return toast('Enter your name');
+  const btn=$('r-btn'); btn.disabled=true; btn.textContent='Looking you up…';
+  try{
+    const r = await fetch('/api/sync?name='+encodeURIComponent(name)+'&pin='+pin).catch(()=>null);
+    if(!r || r.status===404) return toast('No account found under "'+name+'"');
+    if(r.status===403) return toast('Wrong PIN — ask Dave if you\'re stuck');
+    if(!r.ok) return toast('Hmm, something broke — try again');
+    const ms = ((await r.json()).matches)||[];
+    if(ms.length===1) return adoptAccount(ms[0].id);
+    $('r-picks').innerHTML = '<div class="ob-sub" style="margin:14px 0 8px;">Found more than one — which is you?</div>'+
+      ms.map(m=>`<button class="btn ghost" style="margin-bottom:8px;" onclick="adoptAccount('${m.id}')">${m.workouts} workout${m.workouts===1?'':'s'} · last active ${m.updated?new Date(m.updated).toLocaleDateString():'—'}</button>`).join('');
+  } finally { btn.disabled=false; btn.textContent='Get My Data Back'; }
+}
+async function adoptAccount(id){
+  const doc = await fetch('/api/sync?id='+id).then(r=>r.ok?r.json():null).catch(()=>null);
+  if(!doc || !doc.state) return toast('Couldn\'t load that account — try again');
+  S = doc.state;
+  S.id = id;
+  store.save();
+  personalize(); renderAll(); renderChat();
+  $('onboard').classList.remove('open');
+  toast('Welcome back, '+P().name+'! 💪');
+  if(!S.pin) setTimeout(()=>{ openModal('profile'); toast('Lock it in — set a 4-digit PIN 🔐'); }, 1500);
 }
 function finishOnboard(demo){
   const name=$('ob-name').value.trim() || 'Athlete';
@@ -1244,6 +1301,7 @@ function finishOnboard(demo){
     S = {meals:[], workouts:[], weights:[w], streak:0, stack:[]};
   }
   S.profile = {name, goalWeight:gw, calTarget:cal, proTarget:pro};
+  S.pin = $('ob-pin').value.replace(/\D/g,'');
   S.id = randId();
   store.save();
   personalize(); renderAll();
