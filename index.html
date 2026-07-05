@@ -1173,7 +1173,7 @@ function renderProfileCard(){
 }
 
 function renderAll(){ renderHome(); renderMeals(); renderTrain(); renderStack(); renderProfileCard();
-  if(S && S.profile) $('avatar').textContent = P().name + ' · ' + (S.streak||0) + '🔥';
+  if(S && S.profile) $('avatar').textContent = P().name;
   const pn=$('pin-nudge'); if(pn) pn.style.display=(S && S.profile && !S.pin)?'':'none';
 }
 
@@ -1432,7 +1432,7 @@ function finishOnboard(){
 function personalize(){
   const p = P();
   $('hero-name').textContent = p.name+'.';
-  $('avatar').textContent = p.name + ' · ' + (S.streak||0) + '🔥';
+  $('avatar').textContent = p.name;
   $('chat-greet').textContent = 'Hey '+p.name+" — I'm your SPIN CLASS coach. (No, there are no bikes. Don't ask.) I can see today's meals, training, weight trend, and your stack schedule. Ask me anything. 🏋️";
 }
 
