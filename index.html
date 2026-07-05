@@ -229,6 +229,20 @@
   .wx-last{font-size:10.5px;color:var(--accent3);margin-top:-6px;margin-bottom:8px;}
   .histdetail{padding:4px 0 8px 52px;font-size:12px;color:var(--muted);line-height:1.7;display:none;}
   .histdetail.open{display:block;}
+  /* ---------- week calendar ---------- */
+  .wknav{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .wknav b{font-size:13px;}
+  .wknav button{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:800;}
+  .wk{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
+  .wd{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:7px 2px;text-align:center;cursor:pointer;min-height:64px;display:flex;flex-direction:column;align-items:center;gap:2px;}
+  .wd .dn{font-size:9px;font-weight:800;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;}
+  .wd .dt{font-size:13px;font-weight:900;}
+  .wd .sess{font-size:8.5px;font-weight:800;color:var(--accent3);line-height:1.15;overflow:hidden;}
+  .wd .sess.none{color:#4a4a5a;}
+  .wd.today{border-color:var(--accent);}
+  .wd.today .dt{color:var(--accent);}
+  .wd.done{background:rgba(204,255,0,.08);border-color:rgba(204,255,0,.35);}
+  .wd .ck{font-size:10px;color:var(--accent);font-weight:900;}
   /* ---------- exercise picker ---------- */
   .exlist{max-height:38vh;overflow-y:auto;margin-top:4px;}
   .exrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 4px;border-bottom:1px solid var(--border);cursor:pointer;}
@@ -334,6 +348,16 @@
         <div class="hi">Current streak</div>
         <div class="big"><em id="t-streak">0 days</em> 🔥</div>
         <div style="color:var(--muted);font-size:13px;margin-top:6px;" id="t-week">0 workouts this week</div>
+      </div>
+      <h2 class="section">This Week</h2>
+      <div class="card">
+        <div class="wknav">
+          <button onclick="weekOff--;renderTrain()">‹</button>
+          <b id="wk-label"></b>
+          <button onclick="weekOff++;renderTrain()">›</button>
+        </div>
+        <div class="wk" id="weekcal"></div>
+        <button class="btn ghost small" style="margin-top:10px;" onclick="autofillWeek()">⚡ Auto-fill Week (Day 1–7, Mon–Sun)</button>
       </div>
       <h2 class="section">The Program · PPL Strength A/B</h2>
       <div id="program"></div>
@@ -691,9 +715,65 @@ function renderMeals(){
     </div>`).join('') : '<div class="empty">Nothing logged yet. Fuel up. 🍳</div>';
 }
 
+/* =============== week calendar =============== */
+let weekOff = 0;
+function todaysDay(){
+  const s = S.schedule && S.schedule[todayISO()];
+  return (s!=null) ? s : (S.programDay||0);
+}
+function weekDates(off){
+  const now = new Date();
+  const mon = new Date(now);
+  mon.setDate(now.getDate() - ((now.getDay()+6)%7) + off*7);
+  return Array.from({length:7},(_,i)=>{
+    const d = new Date(mon); d.setDate(mon.getDate()+i);
+    return d;
+  });
+}
+function isoOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function renderWeek(){
+  const days = weekDates(weekOff);
+  const t = todayISO();
+  $('wk-label').textContent = days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+days[6].toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  $('weekcal').innerHTML = days.map(d=>{
+    const iso = isoOf(d);
+    const assigned = S.schedule ? S.schedule[iso] : null;
+    const done = S.workouts.some(w=>w.date===iso);
+    return `<div class="wd${iso===t?' today':''}${done?' done':''}" onclick="openDayAssign('${iso}')">
+      <div class="dn">${d.toLocaleDateString('en-US',{weekday:'short'})}</div>
+      <div class="dt">${d.getDate()}</div>
+      ${done?'<div class="ck">✓</div>':''}
+      <div class="sess${assigned==null?' none':''}">${assigned!=null?PROGRAM[assigned].name:'—'}</div>
+    </div>`;
+  }).join('');
+}
+function openDayAssign(iso){
+  const cur = S.schedule ? S.schedule[iso] : null;
+  const d = new Date(iso+'T12:00:00');
+  $('sheet').innerHTML = `<h3>${d.toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'})}</h3>
+    <div class="exlist">` +
+    PROGRAM.map((p,i)=>`<div class="exrow" onclick="assignDay('${iso}',${i})"><div><b>Day ${i+1} — ${esc(p.name)}</b><small>${esc(p.sub)}</small></div><div class="go">${cur===i?'✓':'+'}</div></div>`).join('') +
+    `</div>
+    ${cur!=null?`<button class="btn ghost small" style="margin-top:10px;" onclick="assignDay('${iso}',null)">Clear This Day</button>`:''}
+    ${(iso===todayISO() && cur!=null)?`<button class="btn" style="margin-top:10px;" onclick="closeModal();startWorkout(${cur})">▶ Start ${esc(PROGRAM[cur].name)} Now</button>`:''}`;
+  $('modal').classList.add('open');
+}
+function assignDay(iso, i){
+  S.schedule = S.schedule || {};
+  if(i==null) delete S.schedule[iso]; else S.schedule[iso]=i;
+  store.save(); closeModal(); renderTrain(); renderHome();
+  toast(i==null?'Day cleared':PROGRAM[i].name+' scheduled ✓');
+}
+function autofillWeek(){
+  const days = weekDates(weekOff);
+  S.schedule = S.schedule || {};
+  days.forEach((d,i)=>{ S.schedule[isoOf(d)] = i; });
+  store.save(); renderTrain(); toast('Week filled: Day 1–7, Mon–Sun ⚡');
+}
+
 let openDay = null;
 function renderProgram(){
-  const cur = S.programDay || 0;
+  const cur = todaysDay();
   if(openDay===null) openDay = cur;
   $('program').innerHTML = PROGRAM.map((p,i)=>{
     const today = i===cur;
@@ -715,7 +795,7 @@ function renderProgram(){
 function toggleDayCard(i){ openDay = (openDay===i? -1 : i); renderProgram(); }
 function logSession(i){
   const p = PROGRAM[i];
-  S.workouts.unshift({type:'Day '+(i+1)+' — '+p.name, dur:i===6?30:60, emoji:i===6?'🚶':'🏋️', when:stamp(), date:new Date().toISOString().slice(0,10)});
+  S.workouts.unshift({type:'Day '+(i+1)+' — '+p.name, day:i, dur:i===6?30:60, emoji:i===6?'🚶':'🏋️', when:stamp(), date:todayISO()});
   if(i!==6) S.streak += 1;
   S.lastDone = S.lastDone || {};
   S.lastDone[i] = dateStr();
@@ -736,19 +816,44 @@ function renderTrain(){
   $('train-active').style.display='none';
   $('t-streak').textContent = S.streak+' days';
   $('t-week').textContent = S.workouts.length+' sessions logged';
+  renderWeek();
   renderProgram();
   const el = $('workout-list');
   el.innerHTML = S.workouts.length ? S.workouts.map((w,wi)=>{
     const extra = w.vol ? ` · ${w.setsDone} sets · ${w.vol.toLocaleString()} lb` : '';
-    const detail = w.detail ? `<div class="histdetail" id="hd-${wi}">`+
-      w.detail.map(d=>`<b style="color:var(--text)">${esc(d.name)}</b>: ${d.sets.map(s=>s.w+'×'+s.r).join(', ')}`).join('<br>')+
-      `</div>` : '';
-    return `<div class="item" ${w.detail?`onclick="document.getElementById('hd-${wi}').classList.toggle('open')" style="cursor:pointer;"`:''}>
+    const detail = `<div class="histdetail" id="hd-${wi}">`+
+      (w.detail ? w.detail.map(d=>`<b style="color:var(--text)">${esc(d.name)}</b>: ${d.sets.map(s=>s.w+'×'+s.r).join(', ')}`).join('<br>') : '<span>No set detail logged.</span>')+
+      `<br><button class="btn ghost small" style="margin-top:8px;" onclick="event.stopPropagation();reopenWorkout(${wi})">✎ Add / Edit Sets</button>`+
+      `</div>`;
+    return `<div class="item" onclick="document.getElementById('hd-${wi}').classList.toggle('open')" style="cursor:pointer;">
       <div class="emoji">${w.emoji}</div>
       <div class="info"><b>${esc(w.type)}</b><small>${w.when}${extra}</small></div>
       <div class="val">${w.dur}<small>MIN</small></div>
     </div>${detail}`;
   }).join('') : '<div class="empty">No sessions yet. First one\'s free. 💪</div>';
+}
+
+/* =============== edit a finished workout =============== */
+function reopenWorkout(wi){
+  const w = S.workouts[wi];
+  let dayIdx = (w.day!=null) ? w.day : (parseInt((w.type.match(/^Day (\d+)/)||[])[1],10)-1);
+  if(isNaN(dayIdx) || dayIdx<0 || dayIdx>6) dayIdx = null;
+  const last = S.lastLifts || {};
+  const exs = [];
+  const tmpl = dayIdx!=null ? PROGRAM[dayIdx].ex.filter(e=>e[1]!=='—') : [];
+  tmpl.forEach(e=>{
+    const d = (w.detail||[]).find(x=>x.name===e[0]);
+    exs.push({name:e[0], target:e[1], rest:e[2], big:!!e[3], lastW:last[e[0]]||'',
+      sets: d ? d.sets.map(s=>({w:s.w, r:s.r, done:true})) : Array.from({length:parseInt(e[1])||3},()=>({w:'',r:'',done:false}))});
+  });
+  (w.detail||[]).forEach(d=>{
+    if(!exs.find(x=>x.name===d.name))
+      exs.push({name:d.name, target:'3 × 8–12', rest:'90 s', big:false, lastW:last[d.name]||'',
+        sets:d.sets.map(s=>({w:s.w, r:s.r, done:true}))});
+  });
+  S.active = {day: dayIdx==null?0:dayIdx, started: Date.now(), editIdx: wi, ex: exs};
+  store.save(); go('train'); renderTrain(); $('main').scrollTop=0;
+  toast('Editing '+w.type+' — add or fix sets, then Save');
 }
 
 /* =============== live workout =============== */
@@ -770,13 +875,14 @@ function renderActive(){
   const a = S.active; const p = PROGRAM[a.day];
   const doneSets = a.ex.reduce((t,x)=>t+x.sets.filter(s=>s.done).length,0);
   const allSets = a.ex.reduce((t,x)=>t+x.sets.length,0);
+  const editing = a.editIdx != null;
   $('train-active').innerHTML = `
     <div class="wo-head">
-      <div class="wn">Day ${a.day+1} — <em>${p.name}</em></div>
-      <div class="wt"><span id="wo-elapsed">0:00</span> · ${doneSets}/${allSets} sets done</div>
+      <div class="wn">${editing?'Editing: ':''}Day ${a.day+1} — <em>${p.name}</em></div>
+      <div class="wt">${editing ? 'Past session — changes save in place' : '<span id="wo-elapsed">0:00</span> · '+doneSets+'/'+allSets+' sets done'}</div>
       <div class="wo-actions">
-        <button class="btn" onclick="finishWorkout()">Finish</button>
-        <button class="btn ghost" onclick="cancelWorkout()">Discard</button>
+        <button class="btn" onclick="finishWorkout()">${editing?'Save Changes':'Finish'}</button>
+        <button class="btn ghost" onclick="cancelWorkout()">${editing?'Cancel':'Discard'}</button>
       </div>
     </div>
     <h2 class="section">Exercises</h2>` +
@@ -894,7 +1000,15 @@ function finishWorkout(){
       if(+lastW) S.lastLifts[x.name] = +lastW;
     }
   });
-  S.workouts.unshift({type:'Day '+(a.day+1)+' — '+p.name, dur, emoji:'🏋️', when:stamp(), date:new Date().toISOString().slice(0,10), vol, setsDone, detail});
+  if(a.editIdx != null){
+    const w = S.workouts[a.editIdx];
+    w.vol = vol; w.setsDone = setsDone; w.detail = detail;
+    S.active = null;
+    store.save(); renderAll();
+    toast('Workout updated — '+setsDone+' sets, '+vol.toLocaleString()+' lb ✓');
+    return;
+  }
+  S.workouts.unshift({type:'Day '+(a.day+1)+' — '+p.name, day:a.day, dur, emoji:'🏋️', when:stamp(), date:todayISO(), vol, setsDone, detail});
   S.streak += 1;
   S.lastDone = S.lastDone || {};
   S.lastDone[a.day] = dateStr();
@@ -1029,9 +1143,9 @@ function coachReply(q){
       ? `You have <b>${due.length} unchecked</b>: ${due.map(d=>`${d.name} at ${fmtTime(d.hour,d.min)}`).join(', ')}. ${due.some(d=>(d.hour*60+d.min)<(new Date().getHours()*60+new Date().getMinutes()))?'One is past its scheduled time — worth knocking out now if your protocol allows.':'You\'re on schedule.'}`
       : `Stack's fully checked off today. Clean sweep. ✓`;
   if(t.includes('workout')||t.includes('train')||t.includes('tomorrow')||t.includes('gym')){
-    const cur = PROGRAM[S.programDay||0];
+    const cur = PROGRAM[todaysDay()];
     const lead = cur.ex[0];
-    return `You're on <b>Day ${(S.programDay||0)+1} — ${cur.name}</b> (${cur.sub}). ${cur.big?`Lead with the heavy <b>${cur.big.toLowerCase()}</b>: ${lead[0]} ${lead[1]}, rest ${lead[2]}. Remember — top of the rep range on all sets at RPE ≤ 8 before adding load.`:`Open with ${lead[0]} ${lead[1]} and work down the list.`} It's all laid out in the Train tab — hit "Done" when you finish and I'll queue up the next one.`;
+    return `You're on <b>Day ${todaysDay()+1} — ${cur.name}</b> (${cur.sub}). ${cur.big?`Lead with the heavy <b>${cur.big.toLowerCase()}</b>: ${lead[0]} ${lead[1]}, rest ${lead[2]}. Remember — top of the rep range on all sets at RPE ≤ 8 before adding load.`:`Open with ${lead[0]} ${lead[1]} and work down the list.`} It's all laid out in the Train tab — hit "Done" when you finish and I'll queue up the next one.`;
   }
   if(t.includes('how am i')||t.includes('doing')||t.includes('progress')||t.includes('weight'))
     return `Strong week, ${esc(p.name)}. Weight's moved <b>${delta} lbs</b> (now ${cur.toFixed(1)}${p.goalWeight?', goal '+p.goalWeight:''}), you're at <b>${cal}/${p.calTarget} kcal</b> and <b>${pro}/${p.proTarget}g protein</b> today, and the streak is <b>${S.streak} days</b>. ${proLeft>60?'Protein is the one lagging — attack it at dinner.':'Keep doing exactly this.'}`;
@@ -1051,7 +1165,7 @@ function renderChat(){
 }
 function buildContext(){
   const {cal,pro} = totals(); const p = P();
-  const prog = PROGRAM[S.programDay||0];
+  const prog = PROGRAM[todaysDay()];
   return JSON.stringify({
     name: p.name,
     calorieTarget: p.calTarget, proteinTarget: p.proTarget,
@@ -1060,7 +1174,8 @@ function buildContext(){
     currentWeightLbs: S.weights[S.weights.length-1], goalWeightLbs: p.goalWeight,
     recentWeights: S.weights.slice(-7),
     trainingStreakDays: S.streak,
-    currentProgramDay: 'Day '+((S.programDay||0)+1)+' — '+prog.name+' ('+prog.sub+')',
+    currentProgramDay: 'Day '+(todaysDay()+1)+' — '+prog.name+' ('+prog.sub+')',
+    weekSchedule: S.schedule || {},
     todaysExercises: prog.ex.map(e=>e[0]+' '+e[1]),
     workoutInProgress: !!S.active,
     recentWorkouts: S.workouts.slice(0,4).map(w=>w.type+' — '+w.when+(w.vol?` (${w.setsDone} sets, ${w.vol} lb volume)`:'')),
