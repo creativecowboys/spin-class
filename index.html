@@ -402,7 +402,7 @@
         <b style="color:var(--text);">Cardio:</b> 20–30 min Zone 2 daily, kept away from heavy squat/deadlift hours. <b style="color:var(--text);">Core:</b> your own routine on Days 1, 3, 5, 7.
       </div>
       <h2 class="section">Recent Sessions</h2>
-      <div class="card" id="workout-list"><div class="empty">No sessions yet. First one's free. 💪</div></div>
+      <div class="card" id="workout-list"><div class="empty">No sessions yet. First one's free.</div></div>
       <button class="btn ghost" onclick="openModal('workout')">+ Log Other Workout</button>
       </div>
     </section>
@@ -583,11 +583,12 @@ function scrubSeed(){
   return true;
 }
 
-/* rename old "Day N — Legs B" workout logs to just "Legs B" */
+/* tidy old workout logs: drop "Day N — " prefixes and retire the 💪 emoji */
 function stripDayNames(){
   let changed = false;
   ((S && S.workouts) || []).forEach(w=>{
     if(w.type && /^Day \d+ — /.test(w.type)){ w.type = w.type.replace(/^Day \d+ — /,''); changed = true; }
+    if(w.emoji === '💪'){ w.emoji = '🏋️'; changed = true; }
   });
   return changed;
 }
@@ -787,7 +788,8 @@ function renderTeamWeek(){
     const days = new Set(m.workouts.map(w=>w.date));
     const hot = days.has(today);
     const dots = wk.map(d=>`<i class="tw-dot${days.has(d)?' on':''}${d===today?' today':''}"></i>`).join('');
-    const sub = hot ? 'trained today 💪' : (m.workouts[0] ? 'last: '+esc(m.workouts[0].type) : 'no workouts yet');
+    const todaysWo = m.workouts.find(w=>w.date===today);
+    const sub = hot ? 'today: '+esc((todaysWo&&todaysWo.type)||'trained') : (m.workouts[0] ? 'last: '+esc(m.workouts[0].type) : 'no workouts yet');
     return `<div class="tw-row${hot?' hot':''}">
       <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
       <div class="tw-info"><b>${esc(m.name)}${m.key===COMM.you?' <small>(you)</small>':''}</b><small>${sub}</small></div>
@@ -956,7 +958,7 @@ function renderTrain(){
       <div class="info"><b>${esc(w.type)}</b><small>${w.when}${extra}</small></div>
       <div class="val">${w.dur}<small>MIN</small></div>
     </div>${detail}`;
-  }).join('') : '<div class="empty">No sessions yet. First one\'s free. 💪</div>';
+  }).join('') : '<div class="empty">No sessions yet. First one\'s free.</div>';
 }
 
 /* =============== edit a finished workout =============== */
@@ -1243,7 +1245,7 @@ function saveMeal(){
 function saveWorkout(){
   const type=$('f-type').value.trim(), dur=+$('f-dur').value||0;
   if(!type) return toast('Name it first!');
-  S.workouts.unshift({type, dur, emoji:'💪', when:stamp(), date:new Date().toISOString().slice(0,10)});
+  S.workouts.unshift({type, dur, emoji:'🏋️', when:stamp(), date:new Date().toISOString().slice(0,10)});
   S.streak += 1;
   store.save(); renderAll(); closeModal(); toast('Workout logged — streak '+S.streak+'! 🔥');
 }
@@ -1406,7 +1408,7 @@ async function adoptAccount(id){
   store.save();
   personalize(); renderAll(); renderChat(); loadCommunity();
   $('onboard').classList.remove('open');
-  toast('Welcome back, '+P().name+'! 💪');
+  toast('Welcome back, '+P().name+'!');
   if(!S.pin) setTimeout(()=>{ openModal('profile'); toast('Lock it in — set a 4-digit PIN 🔐'); }, 1500);
 }
 function finishOnboard(){
