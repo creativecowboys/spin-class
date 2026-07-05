@@ -121,6 +121,14 @@
   .fieldrow{display:flex;gap:10px;}
   .fieldrow .field{flex:1;}
   /* ---------- stack (peptides) ---------- */
+  .daysel{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:12px;}
+  .daysel button{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:9px;padding:8px 0 6px;font-size:11px;font-weight:800;cursor:pointer;text-align:center;line-height:1.1;}
+  .daysel button.sel{border-color:var(--accent);color:var(--accent);background:rgba(204,255,0,.1);}
+  .daysel button.today{box-shadow:inset 0 0 0 1px var(--accent2);}
+  .daysel button .dot{display:block;font-size:9px;margin-top:3px;color:var(--accent3);min-height:11px;}
+  .daypick{display:flex;gap:5px;}
+  .daypick button{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:9px;padding:10px 0;font-size:12px;font-weight:800;cursor:pointer;}
+  .daypick button.on{border-color:var(--accent);color:#0b0b0f;background:var(--accent);}
   .dose{display:flex;align-items:center;gap:12px;padding:14px 4px;border-bottom:1px solid var(--border);}
   .dose:last-child{border-bottom:none;}
   .dose .time{width:52px;text-align:center;flex-shrink:0;}
@@ -376,8 +384,11 @@
       </div>
       <button class="btn" onclick="openModal('meal')">+ Log a Meal</button>
 
-      <h2 class="section">Stack · Today's Schedule</h2>
-      <div class="card" id="dose-list"></div>
+      <h2 class="section">Stack</h2>
+      <div class="card">
+        <div class="daysel" id="stack-days"></div>
+        <div id="dose-list"></div>
+      </div>
       <button class="btn ghost" onclick="openModal('compound')">+ Add to Stack</button>
       <p class="tagline">⚠️ SPIN CLASS only reminds you of the schedule <b>you</b> enter — it never suggests compounds or doses. Set your protocol with your provider.</p>
     </section>
@@ -696,7 +707,7 @@ function go(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
   $('main').scrollTop=0;
   if(t==='team') loadCommunity();
-  if(t==='profile'){ mealDay=null; renderMeals(); }
+  if(t==='profile'){ mealDay=null; renderMeals(); stackDay=null; renderStack(); }
 }
 
 /* =============== render =============== */
@@ -726,9 +737,11 @@ function renderHome(){
   $('g-cal-bar').style.width = Math.min(100, cal/p.calTarget*100)+'%';
   $('g-pro-bar').style.width = Math.min(100, pro/p.proTarget*100)+'%';
 
-  // dose alert: next untaken dose
+  // dose alert: next untaken dose scheduled for today
   const now = d.getHours()*60 + d.getMinutes();
-  const due = S.stack.filter(x=>!x.taken).sort((a,b)=>(a.hour*60+a.min)-(b.hour*60+b.min));
+  const tdow = todayDOW(), tiso = todayISO();
+  const due = S.stack.filter(x=>itemDays(x).includes(tdow) && !(x.takenOn && x.takenOn[tiso]))
+    .sort((a,b)=>(a.hour*60+a.min)-(b.hour*60+b.min));
   if(due.length){
     const n = due[0];
     const overdue = (n.hour*60+n.min) < now;
@@ -1204,25 +1217,45 @@ function finishWorkout(){
   toast(p.name+' done — '+setsDone+' sets, '+vol.toLocaleString()+' lb moved! 🔥');
 }
 
+const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+let stackDay = null;              // selected weekday 0=Mon..6=Sun; null = today
+function todayDOW(){ return (new Date().getDay()+6)%7; }
+function curStackDay(){ return stackDay==null ? todayDOW() : stackDay; }
+function itemDays(it){ return Array.isArray(it.days) ? it.days : [0,1,2,3,4,5,6]; } // legacy = daily
+function selectStackDay(i){ stackDay=i; renderStack(); }
+
+function renderStackDays(){
+  const el = $('stack-days'); if(!el) return;
+  const cur = curStackDay(), td = todayDOW();
+  el.innerHTML = DOW.map((d,i)=>{
+    const n = S.stack.filter(it=>itemDays(it).includes(i)).length;
+    return `<button class="${i===cur?'sel':''}${i===td?' today':''}" onclick="selectStackDay(${i})">${d.slice(0,2)}<span class="dot">${n?'●':''}</span></button>`;
+  }).join('');
+}
 function renderStack(){
-  const el = $('dose-list');
+  renderStackDays();
+  const el = $('dose-list'); if(!el) return;
+  const day = curStackDay(), isToday = day===todayDOW(), iso = todayISO();
   const now = new Date(); const nmin = now.getHours()*60+now.getMinutes();
-  const sorted = [...S.stack].sort((a,b)=>(a.hour*60+a.min)-(b.hour*60+b.min));
-  el.innerHTML = sorted.length ? sorted.map(d=>{
-    const idx = S.stack.indexOf(d);
-    const overdue = !d.taken && (d.hour*60+d.min)<nmin;
+  const rows = S.stack.map((it,idx)=>({it,idx})).filter(x=>itemDays(x.it).includes(day))
+    .sort((a,b)=>(a.it.hour*60+a.it.min)-(b.it.hour*60+b.it.min));
+  el.innerHTML = rows.length ? rows.map(({it,idx})=>{
+    const taken = isToday && it.takenOn && it.takenOn[iso];
+    const overdue = isToday && !taken && (it.hour*60+it.min)<nmin;
     return `<div class="dose${overdue?' overdue':''}">
-      <div class="time"><b>${fmtTime(d.hour,d.min).split(' ')[0]}</b><small>${fmtTime(d.hour,d.min).split(' ')[1]}</small></div>
-      <div class="info"><b>${esc(d.name)}</b><small>${esc(d.dose)}${overdue?' · <span style="color:var(--accent2)">overdue</span>':''}</small></div>
-      <div class="check${d.taken?' done':''}" onclick="toggleDose(${idx})">✓</div>
+      <div class="time" onclick="openModal('compound',${idx})" style="cursor:pointer;"><b>${fmtTime(it.hour,it.min).split(' ')[0]}</b><small>${fmtTime(it.hour,it.min).split(' ')[1]}</small></div>
+      <div class="info" onclick="openModal('compound',${idx})" style="cursor:pointer;"><b>${esc(it.name)}</b><small>${esc(it.dose)}${overdue?' · <span style="color:var(--accent2)">overdue</span>':''}</small></div>
+      ${isToday?`<div class="check${taken?' done':''}" onclick="toggleDose(${idx})">✓</div>`:''}
     </div>`;
-  }).join('') : '<div class="empty">Stack is empty. Add your protocol below.</div>';
+  }).join('') : `<div class="empty">Nothing on ${isToday?'today':DOW[day]}. Add below.</div>`;
 }
 
 function toggleDose(i){
-  S.stack[i].taken = !S.stack[i].taken;
+  const it = S.stack[i]; if(!it) return;
+  const iso = todayISO(); it.takenOn = it.takenOn || {};
+  it.takenOn[iso] = !it.takenOn[iso];
   store.save(); renderStack(); renderHome();
-  if(S.stack[i].taken) toast(S.stack[i].name+' logged ✓');
+  if(it.takenOn[iso]) toast(it.name+' logged ✓');
 }
 
 function renderProfileCard(){
@@ -1290,15 +1323,23 @@ function openModal(kind, arg){
     <button class="btn" onclick="saveProfile()">Save</button>`;
     renderWeightPanel();
   }
-  if(kind==='compound') sheet.innerHTML = `
-    <h3>Add to Stack</h3>
-    <div class="field"><label>Name</label><input id="f-cname" placeholder="e.g. TB-500, Zinc, Fish Oil"></div>
-    <div class="field"><label>Your dose & route</label><input id="f-cdose" placeholder="e.g. 2 mg · subq, or 1 cap · oral"></div>
+  if(kind==='compound'){
+    const editing = (arg!=null && S.stack[arg]);
+    const it = editing ? S.stack[arg] : null;
+    compoundDays = editing ? [...itemDays(it)] : [curStackDay()];
+    sheet.innerHTML = `
+    <h3>${editing?'Edit Stack Item':'Add to Stack'}</h3>
+    <div class="field"><label>Name</label><input id="f-cname" placeholder="e.g. TB-500, Zinc, Fish Oil" value="${editing?esc(it.name):''}"></div>
+    <div class="field"><label>Your dose & route</label><input id="f-cdose" placeholder="e.g. 2 mg · subq, or 1 cap · oral" value="${editing?esc(it.dose):''}"></div>
     <div class="fieldrow">
-      <div class="field"><label>Hour (0–23)</label><input id="f-ch" type="number" min="0" max="23" placeholder="21"></div>
-      <div class="field"><label>Minute</label><input id="f-cm" type="number" min="0" max="59" placeholder="30"></div>
+      <div class="field"><label>Hour (0–23)</label><input id="f-ch" type="number" min="0" max="23" placeholder="21" value="${editing?it.hour:''}"></div>
+      <div class="field"><label>Minute</label><input id="f-cm" type="number" min="0" max="59" placeholder="30" value="${editing?String(it.min).padStart(2,'0'):''}"></div>
     </div>
-    <button class="btn" onclick="saveCompound()">Add</button>`;
+    <div class="field"><label>Repeat on which days?</label><div class="daypick" id="f-cdays"></div></div>
+    <button class="btn" onclick="saveCompound(${editing?arg:'null'})">${editing?'Save Changes':'Add'}</button>
+    ${editing?`<button class="btn ghost" style="margin-top:10px;color:var(--accent2);border-color:var(--accent2);" onclick="deleteCompound(${arg})">Remove from Stack</button>`:''}`;
+    renderDayPick();
+  }
   $('modal').classList.add('open');
   setTimeout(()=>{ const f=sheet.querySelector('input'); if(f) f.focus(); },150);
 }
@@ -1351,12 +1392,37 @@ function saveProfile(){
   if(pin) S.pin = pin;
   store.save(); personalize(); renderAll(); closeModal(); toast('Profile updated ✓');
 }
-function saveCompound(){
+let compoundDays = [];
+function renderDayPick(){
+  const el = $('f-cdays'); if(!el) return;
+  el.innerHTML = DOW.map((d,i)=>`<button type="button" class="${compoundDays.includes(i)?'on':''}" onclick="toggleCompoundDay(${i})">${d[0]}</button>`).join('');
+}
+function toggleCompoundDay(i){
+  const j = compoundDays.indexOf(i);
+  if(j>=0) compoundDays.splice(j,1); else compoundDays.push(i);
+  renderDayPick();
+}
+function saveCompound(editIndex){
   const name=$('f-cname').value.trim(), dose=$('f-cdose').value.trim();
   const h=Math.min(23,Math.max(0,+$('f-ch').value||0)), m=Math.min(59,Math.max(0,+$('f-cm').value||0));
   if(!name||!dose) return toast('Fill in name + dose');
-  S.stack.push({name, dose, hour:h, min:m, taken:false});
-  store.save(); renderAll(); closeModal(); toast(name+' added to stack ✓');
+  if(!compoundDays.length) return toast('Pick at least one day');
+  const days=[...compoundDays].sort((a,b)=>a-b);
+  if(editIndex!=null && S.stack[editIndex]){
+    const it=S.stack[editIndex];
+    it.name=name; it.dose=dose; it.hour=h; it.min=m; it.days=days;
+    toast('Stack updated ✓');
+  } else {
+    S.stack.push({name, dose, hour:h, min:m, days, takenOn:{}});
+    toast(name+' added ✓');
+  }
+  store.save(); renderAll(); closeModal();
+}
+function deleteCompound(index){
+  if(index==null || !S.stack[index]) return;
+  if(!confirm('Remove this from your stack?')) return;
+  S.stack.splice(index,1);
+  store.save(); renderAll(); closeModal(); toast('Removed from stack');
 }
 
 /* =============== offline coach fallback (used only when the API is unreachable) =============== */
@@ -1364,7 +1430,8 @@ function coachReply(q){
   const {cal,pro} = totals();
   const p = P();
   const remaining = Math.max(0, p.calTarget-cal), proLeft = Math.max(0, p.proTarget-pro);
-  const due = S.stack.filter(x=>!x.taken);
+  const _td=todayDOW(), _ti=todayISO();
+  const due = S.stack.filter(x=>itemDays(x).includes(_td) && !(x.takenOn && x.takenOn[_ti]));
   const cur = S.weights.length ? S.weights[S.weights.length-1] : 0;
   const delta = (cur - (S.weights[0]||cur)).toFixed(1);
   const t = q.toLowerCase();
@@ -1413,8 +1480,8 @@ function buildContext(){
     workoutInProgress: !!S.active,
     recentWorkouts: S.workouts.slice(0,4).map(w=>w.type+' — '+w.when+(w.vol?` (${w.setsDone} sets, ${w.vol} lb volume)`:'')),
     lastLiftWeights: S.lastLifts||{},
-    stackDueToday: S.stack.filter(x=>!x.taken).map(d=>`${d.name} (${d.dose}) at ${fmtTime(d.hour,d.min)}`),
-    stackTakenToday: S.stack.filter(x=>x.taken).map(d=>d.name)
+    stackDueToday: S.stack.filter(x=>itemDays(x).includes(todayDOW()) && !(x.takenOn && x.takenOn[todayISO()])).map(d=>`${d.name} (${d.dose}) at ${fmtTime(d.hour,d.min)}`),
+    stackTakenToday: S.stack.filter(x=>itemDays(x).includes(todayDOW()) && x.takenOn && x.takenOn[todayISO()]).map(d=>d.name)
   });
 }
 async function send(){
