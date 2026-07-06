@@ -149,8 +149,11 @@
   .cw-item{position:relative;overflow:hidden;border-radius:10px;}
   .cw-del{position:absolute;top:0;right:0;bottom:0;width:84px;background:var(--accent2);color:#0b0b0f;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
   .cw-face{position:relative;background:var(--bg);transition:transform .18s ease;touch-action:pan-y;}
-  .section.coll{cursor:pointer;display:flex;align-items:center;justify-content:space-between;}
-  .coll-ch{color:var(--muted);font-size:13px;font-weight:800;}
+  .section.coll{cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:14px 16px;margin:14px 0 0;color:var(--text);}
+  .section.coll:active{background:var(--surface2);}
+  .coll-ch{color:var(--accent);font-size:15px;font-weight:900;letter-spacing:0;}
   .ba{display:flex;gap:10px;margin-bottom:12px;}
   .ba-col{flex:1;text-align:center;}
   .ba-lbl{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
@@ -444,8 +447,8 @@
       <button class="btn ghost" onclick="openModal('compound')">+ Add to Stack</button>
       <p class="tagline">⚠️ SPIN CLASS only reminds you of the schedule <b>you</b> enter — it never suggests compounds or doses. Set your protocol with your provider.</p>
 
-      <h2 class="section coll" onclick="toggleColl('weight')">Weight Trend <span class="coll-ch" id="ch-weight">▸</span></h2>
-      <div class="coll-body" id="coll-weight" style="display:none;">
+      <h2 class="section coll" onclick="toggleColl('weight')">Weight Trend <span class="coll-ch" id="ch-weight">▾</span></h2>
+      <div class="coll-body" id="coll-weight">
         <div class="card">
           <div class="chart-meta">
             <div class="w"><span id="w-now">—</span> <small>lbs</small></div>
