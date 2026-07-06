@@ -44,10 +44,27 @@
   .pill{display:inline-block;background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:3px 10px;font-size:11.5px;color:var(--muted);margin:2px 4px 2px 0;}
   .pill b{color:var(--text);}
   /* program builder */
-  .pday{border:1px solid var(--border);border-radius:14px;margin-bottom:14px;overflow:hidden;}
+  .pday{border:1px solid var(--border);border-radius:14px;margin-bottom:12px;overflow:hidden;}
   .pday-h{background:var(--surface2);padding:12px 14px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
   .pday-h .field{margin-bottom:0;}
   .pday-b{padding:10px 14px 14px;}
+  /* collapsible library card */
+  .wcard{border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden;background:var(--surface);}
+  .wcard.open{border-color:var(--accent);}
+  .wcard-h{display:flex;align-items:center;gap:12px;padding:13px 14px;cursor:pointer;user-select:none;}
+  .wcard-h:hover{background:var(--surface2);}
+  .wcard-num{width:26px;height:26px;flex-shrink:0;border-radius:8px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center;}
+  .wcard.open .wcard-num{background:var(--accent);color:#0b0b0f;border-color:var(--accent);}
+  .wcard-t{flex:1;min-width:0;}
+  .wcard-t b{font-size:15px;font-weight:900;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .wcard-t small{color:var(--muted);font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .wcard-acts{display:flex;gap:6px;flex-shrink:0;align-items:center;}
+  .wcard-chev{color:var(--muted);font-size:12px;transition:transform .18s;flex-shrink:0;}
+  .wcard.open .wcard-chev{transform:rotate(90deg);color:var(--accent);}
+  .wcard-b{display:none;padding:4px 14px 14px;border-top:1px solid var(--border);}
+  .wcard.open .wcard-b{display:block;}
+  .wcard-meta{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:12px 0 6px;}
+  .wcard-meta .field{margin-bottom:0;flex:1;min-width:120px;}
   .exmodal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-end;justify-content:center;z-index:100;}
   .exmodal.open{display:flex;}
   .exmodalcard{background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 0 0;width:100%;max-width:640px;max-height:86vh;display:flex;flex-direction:column;padding:16px 16px calc(16px + env(safe-area-inset-bottom));}
@@ -117,13 +134,17 @@
     <div id="tab-program" style="display:none;">
       <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
         <div>
-          <b>Master Program</b>
+          <b>Workout Library</b>
           <div class="muted" id="progstatus">Loading…</div>
         </div>
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn ghost small" onclick="loadDefaultProgram()">Reset to PPL Default</button>
           <button class="btn small" onclick="pushProgram()">🚀 Push to App</button>
         </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 2px 12px;">
+        <div class="muted" id="libcount"></div>
+        <button class="btn small" onclick="newWorkout()">+ New Workout</button>
       </div>
       <div id="builder"></div>
     </div>
@@ -211,14 +232,14 @@ function renderTeamSched(){
         </select></div>`;
     }).join('')}</div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-      <button class="btn ghost small" onclick="fillTeamSched()">⚡ Fill Mon–Sun (Day 1–7)</button>
+      <button class="btn ghost small" onclick="fillTeamSched()">⚡ Fill Mon–Sun (Day 1→)</button>
       <button class="btn ghost small" onclick="clearTeamSched()">Clear</button>
       <button class="btn small" onclick="pushTeamSchedule()">🚀 Push to Everyone (${MEMBERS.length})</button>
     </div>
     <p class="muted" style="margin-top:8px;font-size:12px;">Sets these workouts on every member's week — they see them as "today's workout" next time they open the app. Days left as "rest" are left as each member had them.</p>`;
 }
 function setTeamSched(iso,v){ if(v==='') delete TEAMSCHED[iso]; else TEAMSCHED[iso]=+v; }
-function fillTeamSched(){ awDates(awOff).forEach((d,idx)=>{ TEAMSCHED[isoOf(d)]=idx; }); renderTeamSched(); }
+function fillTeamSched(){ const n=progNow().length; awDates(awOff).forEach((d,idx)=>{ if(idx<n) TEAMSCHED[isoOf(d)]=idx; }); renderTeamSched(); }
 function clearTeamSched(){ TEAMSCHED={}; renderTeamSched(); }
 async function pushTeamSchedule(){
   if(!MEMBERS.length) return toast('No members yet');
@@ -259,7 +280,7 @@ function schedHtml(i){
         </select></div>`;
     }).join('')}</div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-      <button class="btn ghost small" onclick="fillSched(${i})">⚡ Fill Mon–Sun (Day 1–7)</button>
+      <button class="btn ghost small" onclick="fillSched(${i})">⚡ Fill Mon–Sun (Day 1→)</button>
       <button class="btn small" onclick="saveSched(${i})">🚀 Push Schedule to ${esc(((m.state||{}).profile||{}).name||'member')}</button>
     </div>`;
 }
@@ -268,8 +289,8 @@ function setSched(i, iso, v){
   if(v==='') delete s.schedule[iso]; else s.schedule[iso]=+v;
 }
 function fillSched(i){
-  const s=MEMBERS[i].state; s.schedule=s.schedule||{};
-  awDates(awOff).forEach((d,idx)=>{ s.schedule[isoOf(d)]=idx; });
+  const s=MEMBERS[i].state; s.schedule=s.schedule||{}; const n=progNow().length;
+  awDates(awOff).forEach((d,idx)=>{ if(idx<n) s.schedule[isoOf(d)]=idx; });
   renderMembers();
 }
 async function saveSched(i){
@@ -372,17 +393,30 @@ async function loadProgram(){
   }catch(e){ PB=JSON.parse(JSON.stringify(DEFPROG)); $('progstatus').textContent='Offline — editing default'; }
   renderBuilder();
 }
-function loadDefaultProgram(){ PB=JSON.parse(JSON.stringify(DEFPROG)); renderBuilder(); toast('Loaded PPL default into editor'); }
+function loadDefaultProgram(){ PB=JSON.parse(JSON.stringify(DEFPROG)); pbOpen=new WeakSet(); renderBuilder(); toast('Loaded PPL default into editor'); }
+let pbOpen = new WeakSet(); // which workout cards are expanded (keyed by the object, survives add/delete)
 function renderBuilder(){
-  $('builder').innerHTML = PB.map((d,di)=>`
-    <div class="pday">
-      <div class="pday-h">
-        <div style="font-weight:900;font-size:15px;align-self:center;">Day ${di+1}</div>
-        <div class="field"><label>Session name</label><input value="${esc(d.name)}" onchange="PB[${di}].name=this.value"></div>
-        <div class="field" style="flex:2;"><label>Subtitle</label><input value="${esc(d.sub)}" onchange="PB[${di}].sub=this.value"></div>
-        <div class="field"><label>Big lift (or blank)</label><input value="${esc(d.big||'')}" onchange="PB[${di}].big=this.value||null"></div>
+  $('libcount').textContent = PB.length + ' workout' + (PB.length===1?'':'s') + ' in the library';
+  $('builder').innerHTML = PB.map((d,di)=>{
+    const open = pbOpen.has(d);
+    const meta = [d.sub, (d.ex||[]).length + ' exercise' + ((d.ex||[]).length===1?'':'s')].filter(Boolean).join(' · ');
+    return `
+    <div class="wcard${open?' open':''}">
+      <div class="wcard-h" onclick="toggleWorkout(${di})">
+        <div class="wcard-num">${di+1}</div>
+        <div class="wcard-t"><b>${esc(d.name||'Untitled workout')}</b><small>${esc(meta)}</small></div>
+        <div class="wcard-acts">
+          <button class="btn ghost small" onclick="event.stopPropagation();dupWorkout(${di})">Duplicate</button>
+          <button class="icobtn" title="Delete workout" onclick="event.stopPropagation();delWorkout(${di})">🗑</button>
+          <span class="wcard-chev">▶</span>
+        </div>
       </div>
-      <div class="pday-b">
+      <div class="wcard-b">
+        <div class="wcard-meta">
+          <div class="field"><label>Workout name</label><input value="${esc(d.name)}" onchange="PB[${di}].name=this.value;refreshCardHead(${di})"></div>
+          <div class="field" style="flex:2;"><label>Subtitle</label><input value="${esc(d.sub||'')}" onchange="PB[${di}].sub=this.value;refreshCardHead(${di})"></div>
+          <div class="field"><label>Big lift (or blank)</label><input value="${esc(d.big||'')}" onchange="PB[${di}].big=this.value||null"></div>
+        </div>
         ${d.ex.map((e,ei)=>`
           <div class="exline">
             <input class="nm" list="exdl" value="${esc(e[0])}" onchange="PB[${di}].ex[${ei}][0]=this.value">
@@ -399,7 +433,39 @@ function renderBuilder(){
           <button class="btn ghost small" onclick="addEx(${di})">Add</button>
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+function refreshCardHead(di){
+  // update the collapsed header text live without re-rendering (keeps input focus)
+  const d=PB[di]; if(!d) return;
+  const card=$('builder').children[di]; if(!card) return;
+  const t=card.querySelector('.wcard-t');
+  if(t){ const meta=[d.sub,(d.ex||[]).length+' exercise'+((d.ex||[]).length===1?'':'s')].filter(Boolean).join(' · ');
+    t.querySelector('b').textContent=d.name||'Untitled workout';
+    t.querySelector('small').textContent=meta; }
+}
+function toggleWorkout(di){ const d=PB[di]; if(!d) return; if(pbOpen.has(d)) pbOpen.delete(d); else pbOpen.add(d); renderBuilder(); }
+function newWorkout(){
+  const w={name:'New Workout',sub:'',big:null,ex:[]};
+  PB.push(w); pbOpen.add(w); renderBuilder();
+  const el=$('builder').lastElementChild; if(el) el.scrollIntoView({behavior:'smooth',block:'center'});
+  toast('Blank workout added — build it out');
+}
+function dupWorkout(di){
+  const src=PB[di]; if(!src) return;
+  const copy=JSON.parse(JSON.stringify(src));
+  copy.name=(src.name||'Workout')+' copy';
+  PB.push(copy); pbOpen.add(copy); renderBuilder(); // appended to the end so existing day numbers don't shift
+  const el=$('builder').lastElementChild; if(el) el.scrollIntoView({behavior:'smooth',block:'center'});
+  toast('Duplicated — edit the copy');
+}
+function delWorkout(di){
+  const d=PB[di]; if(!d) return;
+  if(PB.length<=1) return toast('Keep at least one workout');
+  if(!confirm('Delete "'+(d.name||'this workout')+'"?\n\nHeads-up: this renumbers the workouts after it, so re-push any member schedules that used later day numbers.')) return;
+  PB.splice(di,1); renderBuilder();
+  toast('Workout deleted');
 }
 function moveEx(di,ei,dir){
   const arr=PB[di].ex; const j=ei+dir;
@@ -461,8 +527,9 @@ function addExFromLib(i){
   renderBuilder(); // modal stays open so you can add several
 }
 async function pushProgram(){
-  for(const d of PB){ if(!d.name.trim()) return toast('Every day needs a name'); }
-  if(!confirm('Push this program to everyone? Members get it next time they open the app.')) return;
+  if(!PB.length) return toast('Add at least one workout first');
+  for(const d of PB){ if(!(d.name||'').trim()) return toast('Every workout needs a name'); }
+  if(!confirm('Push this library of '+PB.length+' workout'+(PB.length===1?'':'s')+' to everyone? Members get it next time they open the app.')) return;
   const r=await api('/api/program',{method:'PUT',body:JSON.stringify({days:PB})});
   const d=await r.json();
   if(d.ok){ toast('Program pushed to the app 🚀'); $('progstatus').textContent='Custom program live (pushed just now)'; }

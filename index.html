@@ -676,16 +676,20 @@ function schedSync(){
 async function loadRemote(){
   try{
     const pr = await fetch('/api/program').then(r=>r.ok?r.json():null).catch(()=>null);
-    if(pr && pr.days && pr.days.length===7){ PROGRAM = pr.days; if(!S.active) renderAll(); }
+    if(pr && pr.days && pr.days.length>=1){ PROGRAM = pr.days; if(!S.active) renderAll(); }
   }catch(e){}
   try{
     if(S && S.id){
       const sr = await fetch('/api/sync?id='+S.id).then(r=>r.ok?r.json():null).catch(()=>null);
-      if(sr && sr.state && !S.active && (sr.updated||0) > (S.updatedAt||0)+2000){
+      if(sr && sr.state && (sr.updated||0) > (S.updatedAt||0)+2000){
+        const keepActive = S.active; // never lose an in-progress workout when new data (e.g. an admin schedule push) arrives
         S = sr.state;
-        if([scrubSeed(), migrateWeights(), stripDayNames()].some(Boolean)) store.save();
-        else try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
-        personalize(); renderAll(); renderChat();
+        if(keepActive){ S.active = keepActive; store.save(); } // updated data lands; the live workout stays put and shows when they finish
+        else {
+          if([scrubSeed(), migrateWeights(), stripDayNames()].some(Boolean)) store.save();
+          else try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
+          personalize(); renderAll(); renderChat();
+        }
       }
     }
   }catch(e){}
@@ -1145,6 +1149,8 @@ function workoutFor(ref){
   if(isCustomRef(ref)) return customById(ref.slice(2));
   return PROGRAM[ref] || null;
 }
+/* a workout counts as a rest day by name (no longer a hardcoded index) */
+function isRestDay(p){ return !!(p && /rest/i.test(p.name||'')); }
 function newCustomId(){ return 'w'+Array.from(crypto.getRandomValues(new Uint8Array(6)),b=>b.toString(16).padStart(2,'0')).join(''); }
 
 /* =============== week calendar =============== */
@@ -1316,8 +1322,8 @@ function renderProgram(){
   $('program').innerHTML = PROGRAM.map((p,i)=>{
     const today = i===cur;
     const rows = p.ex.map(e=>`<div class="ex"><div class="xn${e[3]?' big':''}">${e[0]}</div><div class="xs">${e[1]}</div><div class="xr">${e[2]}</div></div>`).join('');
-    const logBtn = i===6
-      ? `<button class="btn small" style="margin-top:12px;" onclick="event.stopPropagation();logSession(6)">✓ Done — Log Rest Day</button>`
+    const logBtn = isRestDay(p)
+      ? `<button class="btn small" style="margin-top:12px;" onclick="event.stopPropagation();logSession(${i})">✓ Done — Log Rest Day</button>`
       : `<button class="btn small" style="margin-top:12px;" onclick="event.stopPropagation();startWorkout(${i})">▶ Start Workout</button>`;
     return `<div class="pday${today?' today':''}${openDay===i?' open':''}">
       <div class="pday-head" onclick="toggleDayCard(${i})">
@@ -1333,11 +1339,12 @@ function renderProgram(){
 function toggleDayCard(i){ openDay = (openDay===i? -1 : i); renderProgram(); }
 function logSession(i){
   const p = PROGRAM[i];
-  S.workouts.unshift({type:p.name, day:i, dur:i===6?30:60, emoji:i===6?'🚶':'🏋️', when:stamp(), date:todayISO()});
-  if(i!==6) S.streak += 1;
+  const rest = isRestDay(p);
+  S.workouts.unshift({type:p.name, day:i, dur:rest?30:60, emoji:rest?'🚶':'🏋️', when:stamp(), date:todayISO()});
+  if(!rest) S.streak += 1;
   S.lastDone = S.lastDone || {};
   S.lastDone[i] = dateStr();
-  S.programDay = (i+1)%7;
+  S.programDay = (i+1)%PROGRAM.length;
   openDay = -1;
   store.save(); renderAll();
   toast(p.name+' logged ✓');
@@ -2226,7 +2233,7 @@ loadRemote().then(()=>{ if(S && S.id && S.profile) schedSync(); loadCommunity();
 // re-pull on return to foreground so admin pushes (schedules/program) show up without a cold reopen
 let lastPull=Date.now();
 document.addEventListener('visibilitychange', ()=>{
-  if(!document.hidden && S && S.id && S.profile && !S.active && Date.now()-lastPull>8000){ lastPull=Date.now(); loadRemote(); }
+  if(!document.hidden && S && S.id && S.profile && Date.now()-lastPull>8000){ lastPull=Date.now(); loadRemote(); }
 });
 </script>
 </body>

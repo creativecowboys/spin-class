@@ -13,7 +13,8 @@ export default async function handler(req, res) {
       if (!process.env.ADMIN_KEY || req.headers['x-admin-key'] !== process.env.ADMIN_KEY)
         return res.status(401).json({ error: 'unauthorized' });
       const { days } = req.body || {};
-      if (!Array.isArray(days) || days.length !== 7) return res.status(400).json({ error: 'program must have exactly 7 days' });
+      if (!Array.isArray(days) || days.length < 1 || days.length > 60) return res.status(400).json({ error: 'program must have 1–60 workouts' });
+      if (!days.every(d => d && typeof d.name === 'string' && d.name.trim() && Array.isArray(d.ex))) return res.status(400).json({ error: 'every workout needs a name and an exercise list' });
       await put('config/program.json', JSON.stringify({ days, pushed: Date.now() }), {
         access: 'public', addRandomSuffix: false, allowOverwrite: true,
         contentType: 'application/json', cacheControlMaxAge: 0
