@@ -124,6 +124,9 @@
   .daysel button.sel{border-color:var(--accent);color:var(--accent);background:rgba(204,255,0,.1);}
   .daysel button.today{box-shadow:inset 0 0 0 1px var(--accent2);}
   .daysel button .dot{display:block;font-size:9px;margin-top:3px;color:var(--accent3);min-height:11px;}
+  .cardio-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .cardio-grid button{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:12px 6px;font-size:12px;font-weight:700;cursor:pointer;}
+  .cardio-grid button.on{border-color:var(--accent);color:var(--accent);background:rgba(204,255,0,.1);}
   .daypick{display:flex;gap:5px;}
   .daypick button{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:9px;padding:10px 0;font-size:12px;font-weight:800;cursor:pointer;}
   .daypick button.on{border-color:var(--accent);color:#0b0b0f;background:var(--accent);}
@@ -193,7 +196,8 @@
   .inputrow{display:flex;gap:8px;padding:8px 0 10px;flex-shrink:0;}
   .inputrow input{flex:1;padding:14px 16px;border-radius:24px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:15px;outline:none;}
   .inputrow button{width:48px;height:48px;border-radius:50%;border:none;background:var(--accent);color:#0b0b0f;font-size:19px;font-weight:900;cursor:pointer;flex-shrink:0;}
-  .inputrow .coach-cam{width:48px;height:48px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;flex-shrink:0;}
+  .inputrow .coach-cam{width:48px;height:48px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;flex-shrink:0;}
+  .inputrow .coach-cam svg{width:22px;height:22px;}
   /* ---------- bottom nav ---------- */
   nav{
     position:absolute;bottom:0;left:0;right:0;display:flex;
@@ -534,7 +538,7 @@
           <div class="chip" onclick="ask('Plan tomorrow\'s workout')">Tomorrow's workout</div>
         </div>
         <div class="inputrow">
-          <label class="coach-cam" title="Scan a nutrition label">📷<input type="file" accept="image/*" onchange="onCoachPhoto(this)" style="display:none;"></label>
+          <label class="coach-cam" title="Scan a nutrition label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3.4"/></svg><input type="file" accept="image/*" onchange="onCoachPhoto(this)" style="display:none;"></label>
           <input id="chat-in" placeholder="Ask, or scan a label…" onkeydown="if(event.key==='Enter')send()">
           <button onclick="send()">↑</button>
         </div>
@@ -1157,6 +1161,7 @@ function openDayAssign(iso){
     customRows +
     `</div>
     <button class="btn ghost" style="margin-top:10px;" onclick="openBuilder('${iso}')">+ Build a Workout</button>
+    <button class="btn ghost" style="margin-top:10px;" onclick="openCardio('${iso}')">🏃 Log Cardio</button>
     ${cur!=null?`<button class="btn ghost small" style="margin-top:10px;" onclick="assignDay('${iso}',null)">Clear This Day</button>`:''}
     ${(iso===todayISO() && cur!=null && workoutFor(cur))?`<button class="btn" style="margin-top:10px;" onclick="closeModal();startWorkout(${typeof cur==='string'?`'${cur}'`:cur})">▶ Start ${esc(workoutFor(cur).name)} Now</button>`:''}`;
   $('modal').classList.add('open');
@@ -1233,6 +1238,40 @@ function saveCustomWorkout(){
   toast('"'+name+'" saved ✓');
   openDayAssign(iso); // back to the picker — the new workout is now in the list
 }
+
+/* =============== cardio =============== */
+const CARDIO_TYPES = ['Treadmill','Running','Walking','Incline Walk','Cycling','Elliptical','Rowing','Stairmaster','Swimming','Jump Rope','Hiking','Zone 2 Cardio'];
+let cardioPick = null;
+function openCardio(iso){
+  cardioPick = {iso: iso||todayISO(), type:null};
+  renderCardio();
+  $('modal').classList.add('open');
+}
+function renderCardio(){
+  const c=cardioPick; if(!c) return;
+  $('sheet').innerHTML = `<h3>Log Cardio</h3>
+    <div class="field" style="margin-bottom:6px;"><label>What kind?</label></div>
+    <div class="cardio-grid">${CARDIO_TYPES.map(t=>`<button type="button" class="${c.type===t?'on':''}" onclick="selectCardio('${t}')">${t}</button>`).join('')}</div>
+    <div class="fieldrow" style="margin-top:14px;">
+      <div class="field"><label>Duration (min)</label><input id="f-cardio-dur" type="number" placeholder="30"></div>
+      <div class="field"><label>Date</label><input id="f-cardio-date" type="date" value="${c.iso}"></div>
+    </div>
+    <button class="btn" onclick="saveCardio()">Log Cardio</button>`;
+}
+function selectCardio(t){ cardioPick.type=t; renderCardio(); }
+function saveCardio(){
+  const c=cardioPick; if(!c) return;
+  if(!c.type) return toast('Pick a cardio type');
+  const dur=+$('f-cardio-dur').value||0;
+  if(!dur) return toast('Enter the minutes');
+  const date=$('f-cardio-date').value||todayISO();
+  const when = date===todayISO() ? stamp() : dateStr(new Date(date+'T12:00:00'));
+  S.workouts.unshift({type:'Cardio · '+c.type, dur, emoji:'🏃', when, date, cardio:true});
+  S.workouts.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  S.streak += 1;
+  cardioPick=null;
+  store.save(); renderAll(); closeModal(); toast(c.type+' logged ✓');
+}
 let openDay = null;
 function renderProgram(){
   const cur = todaysDay();
@@ -1288,7 +1327,7 @@ function renderTrain(){
   el.innerHTML = S.workouts.length ? S.workouts.map((w,wi)=>{
     const extra = w.vol ? ` · ${w.setsDone} sets · ${w.vol.toLocaleString()} lb` : '';
     const detail = `<div class="histdetail" id="hd-${wi}">`+
-      (w.detail ? w.detail.map(d=>`<b style="color:var(--text)">${esc(d.name)}</b>: ${d.sets.map(s=>s.w+'×'+s.r).join(', ')}`).join('<br>') : '<span>No set detail logged.</span>')+
+      (w.detail ? w.detail.map(d=>`<b style="color:var(--text)">${esc(d.name)}</b>: ${d.sets.map(s=>isTimed(d.name)?(s.r+'s'+(s.w?' · '+s.w+'lb':'')):(s.w+'×'+s.r)).join(', ')}`).join('<br>') : '<span>No set detail logged.</span>')+
       `<br><button class="btn ghost small" style="margin-top:8px;" onclick="event.stopPropagation();reopenWorkout(${wi})">✎ Add / Edit Sets</button>`+
       `</div>`;
     return `<div class="item" onclick="document.getElementById('hd-${wi}').classList.toggle('open')" style="cursor:pointer;">
@@ -1322,6 +1361,8 @@ function reopenWorkout(wi){
 }
 
 /* =============== live workout =============== */
+/* time-based holds log weight + seconds instead of weight × reps */
+function isTimed(name){ return /\bplank\b|wall sit|dead hang|hollow (body )?hold|l-sit|\bcarry\b|farmer'?s/i.test(name||''); }
 function startWorkout(ref){
   const p = workoutFor(ref);
   if(!p) return toast('Workout not found');
@@ -1365,13 +1406,14 @@ function renderActive(){
           <div class="setrow${s.done?' done':''}">
             <div class="sn">${si+1}</div>
             <input type="number" inputmode="decimal" placeholder="${x.lastW||'lbs'}" value="${s.w}" onchange="setVal(${xi},${si},'w',this.value)">
-            <input type="number" inputmode="numeric" placeholder="reps" value="${s.r}" onchange="setVal(${xi},${si},'r',this.value)">
+            <input type="number" inputmode="numeric" placeholder="${isTimed(x.name)?'sec':'reps'}" value="${s.r}" onchange="setVal(${xi},${si},'r',this.value)">
             <div class="check${s.done?' done':''}" onclick="toggleSet(${xi},${si})">✓</div>
           </div>`).join('')}
         <button class="addset" onclick="addSet(${xi})">+ Add Set</button>
       </div>`;
     }).join('') +
-    `<button class="btn ghost" style="margin-bottom:10px;" onclick="openPicker('add')">+ Add Exercise from Library</button>`;
+    `<button class="btn ghost" style="margin-bottom:10px;" onclick="openPicker('add')">+ Add Exercise from Library</button>`+
+    `<button class="btn ghost" style="margin-bottom:10px;" onclick="openCardio(todayISO())">🏃 Add Cardio to This Session</button>`;
   tickElapsed();
 }
 
@@ -1465,7 +1507,7 @@ function finishWorkout(){
     const logged = x.sets.filter(s=>s.done && (s.w||s.r));
     if(logged.length){
       detail.push({name:x.name, sets:logged.map(s=>({w:+s.w||0, r:+s.r||0}))});
-      logged.forEach(s=>{ vol += (+s.w||0)*(+s.r||0); });
+      if(!isTimed(x.name)) logged.forEach(s=>{ vol += (+s.w||0)*(+s.r||0); });
       setsDone += logged.length;
       const lastW = logged[logged.length-1].w;
       if(+lastW) S.lastLifts[x.name] = +lastW;
