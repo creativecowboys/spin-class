@@ -90,7 +90,8 @@
     </div>
 
     <div id="tab-members">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div class="card" id="teamsched"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 12px;">
         <div class="muted" id="mcount">Loading members…</div>
         <button class="btn ghost small" onclick="loadMembers()">↻ Refresh</button>
       </div>
@@ -163,6 +164,58 @@ function awDates(off){
 }
 function isoOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function progNow(){ return (PB && PB.length===7) ? PB : DEFPROG; }
+
+/* ---------- team schedule: assign a week of workouts to EVERYONE ---------- */
+let TEAMSCHED = {};
+function renderTeamSched(){
+  const el=$('teamsched'); if(!el) return;
+  const days=awDates(awOff), PROG=progNow(), t=isoOf(new Date());
+  const label=days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+days[6].toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  el.innerHTML = `
+    <div class="sect" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">📅 Team Schedule — push workouts to everyone's calendar
+      <button class="btn ghost small" onclick="awOff--;renderTeamSched();renderMembers()">‹</button>
+      <span class="muted">${label}</span>
+      <button class="btn ghost small" onclick="awOff++;renderTeamSched();renderMembers()">›</button></div>
+    <div class="schedgrid">${days.map(d=>{
+      const iso=isoOf(d), cur=TEAMSCHED[iso];
+      return `<div class="schedday${iso===t?' today':''}">
+        <div class="sd-l">${d.toLocaleDateString('en-US',{weekday:'short'})} ${d.getDate()}${iso===t?' · TODAY':''}</div>
+        <select onchange="setTeamSched('${iso}',this.value)">
+          <option value="">— rest / none —</option>
+          ${PROG.map((p,pi)=>`<option value="${pi}" ${cur===pi?'selected':''}>Day ${pi+1} — ${esc(p.name)}</option>`).join('')}
+        </select></div>`;
+    }).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+      <button class="btn ghost small" onclick="fillTeamSched()">⚡ Fill Mon–Sun (Day 1–7)</button>
+      <button class="btn ghost small" onclick="clearTeamSched()">Clear</button>
+      <button class="btn small" onclick="pushTeamSchedule()">🚀 Push to Everyone (${MEMBERS.length})</button>
+    </div>
+    <p class="muted" style="margin-top:8px;font-size:12px;">Sets these workouts on every member's week — they see them as "today's workout" next time they open the app. Days left as "rest" are left as each member had them.</p>`;
+}
+function setTeamSched(iso,v){ if(v==='') delete TEAMSCHED[iso]; else TEAMSCHED[iso]=+v; }
+function fillTeamSched(){ awDates(awOff).forEach((d,idx)=>{ TEAMSCHED[isoOf(d)]=idx; }); renderTeamSched(); }
+function clearTeamSched(){ TEAMSCHED={}; renderTeamSched(); }
+async function pushTeamSchedule(){
+  if(!MEMBERS.length) return toast('No members yet');
+  const set=Object.keys(TEAMSCHED);
+  if(!set.length) return toast('Assign at least one day first');
+  if(!confirm('Push this week\'s workouts to all '+MEMBERS.length+' members?')) return;
+  let ok=0;
+  for(const m of MEMBERS){
+    try{
+      // pull each member's freshest state so we don't clobber their recent activity
+      const sr=await fetch('/api/sync?id='+m.id).then(r=>r.ok?r.json():null).catch(()=>null);
+      const state=(sr&&sr.state)?sr.state:m.state;
+      state.schedule=state.schedule||{};
+      set.forEach(iso=>{ state.schedule[iso]=TEAMSCHED[iso]; });
+      state.updatedAt=Date.now();
+      await api('/api/admin-user',{method:'PUT',body:JSON.stringify({id:m.id,state})});
+      ok++;
+    }catch(e){}
+  }
+  toast('Pushed to '+ok+'/'+MEMBERS.length+' members 🚀');
+  loadMembers();
+}
 function schedHtml(i){
   const m=MEMBERS[i]; const sch=(m.state&&m.state.schedule)||{};
   const days=awDates(awOff); const PROG=progNow();
@@ -211,6 +264,7 @@ async function loadMembers(){
 }
 function fmtDate(ts){ return ts? new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '—'; }
 function renderMembers(){
+  renderTeamSched();
   $('mcount').textContent = MEMBERS.length+' member'+(MEMBERS.length===1?'':'s');
   $('members').innerHTML = MEMBERS.length ? MEMBERS.map((m,i)=>{
     const s=m.state||{}; const p=s.profile||{};

@@ -679,7 +679,7 @@ async function loadRemote(){
   try{
     if(S && S.id){
       const sr = await fetch('/api/sync?id='+S.id).then(r=>r.ok?r.json():null).catch(()=>null);
-      if(sr && sr.state && (sr.updated||0) > (S.updatedAt||0)+2000){
+      if(sr && sr.state && !S.active && (sr.updated||0) > (S.updatedAt||0)+2000){
         S = sr.state;
         if([scrubSeed(), migrateWeights(), stripDayNames()].some(Boolean)) store.save();
         else try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
@@ -2221,6 +2221,11 @@ renderAll();
 renderChat();
 if(needsOnboard) $('onboard').classList.add('open');
 loadRemote().then(()=>{ if(S && S.id && S.profile) schedSync(); loadCommunity(); });
+// re-pull on return to foreground so admin pushes (schedules/program) show up without a cold reopen
+let lastPull=Date.now();
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden && S && S.id && S.profile && !S.active && Date.now()-lastPull>8000){ lastPull=Date.now(); loadRemote(); }
+});
 </script>
 </body>
 </html>
