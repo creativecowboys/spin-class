@@ -532,9 +532,9 @@
         </div>
         <div class="typing" id="typing">Coach is typing…</div>
         <div class="chips">
+          <div class="chip" onclick="ask('Based on my goal, current weight, and training, recommend the daily calorie and macro targets I should set — then give me numbers I can apply.')">Dial in my targets</div>
           <div class="chip" onclick="ask('How am I doing today?')">How am I doing today?</div>
           <div class="chip" onclick="ask('What should I eat for dinner?')">Dinner ideas</div>
-          <div class="chip" onclick="ask('Did I miss anything in my stack?')">Stack check</div>
           <div class="chip" onclick="ask('Plan tomorrow\'s workout')">Tomorrow's workout</div>
         </div>
         <div class="inputrow">
@@ -1577,8 +1577,9 @@ function renderProfileCard(){
   const p = P();
   $('p-name').textContent = p.name;
   const wv = (S.weights && S.weights.length) ? S.weights[S.weights.length-1].w : null;
-  $('p-meta').textContent = (wv!=null ? wv.toFixed(1)+' lbs'+(p.goalWeight?' · goal '+p.goalWeight:'') : 'no weigh-ins yet')
-    + ' · targets '+p.calTarget+' kcal / '+p.proTarget+'g protein';
+  $('p-meta').textContent = (p.goal ? GOAL_LABEL[p.goal]+' · ' : '')
+    + (wv!=null ? wv.toFixed(1)+' lbs'+(p.goalWeight?' → '+p.goalWeight:'') : 'no weigh-ins yet')
+    + ' · '+p.calTarget+' kcal / '+p.proTarget+'g P';
   renderPhotos();
   renderWeightPanel();
 }
@@ -1722,9 +1723,18 @@ function openModal(kind, arg){
   }
   if(kind==='profile'){
     const p = P();
+    goalSel = p.goal || 'maintain';
     sheet.innerHTML = `
     <h3>Your Profile</h3>
     <div class="field"><label>Name</label><input id="f-pname" value="${esc(p.name)}"></div>
+    <div class="field"><label>Your goal</label>
+      <div class="seg" id="goal-seg">
+        <button type="button" class="${goalSel==='cut'?'on':''}" data-g="cut" onclick="setGoalSel('cut')">Cut</button>
+        <button type="button" class="${goalSel==='maintain'?'on':''}" data-g="maintain" onclick="setGoalSel('maintain')">Maintain</button>
+        <button type="button" class="${goalSel==='bulk'?'on':''}" data-g="bulk" onclick="setGoalSel('bulk')">Bulk</button>
+      </div>
+    </div>
+    <p class="tagline" style="margin:-4px 0 10px;">Not sure what numbers to set? Tap "Dial in my targets" in the Coach and it'll recommend targets you can apply here in one tap.</p>
     <div class="fieldrow">
       <div class="field"><label>Calories / day</label><input id="f-pcal" type="number" value="${p.calTarget}"></div>
       <div class="field"><label>Protein (g) / day</label><input id="f-ppro" type="number" value="${p.proTarget}"></div>
@@ -1813,10 +1823,17 @@ function deleteWeight(index){
   S.weights.splice(index,1);
   store.save(); renderAll(); closeModal(); toast('Weigh-in deleted');
 }
+let goalSel = 'maintain';
+function setGoalSel(g){
+  goalSel = g;
+  document.querySelectorAll('#goal-seg button').forEach(b=>b.classList.toggle('on', b.dataset.g===g));
+}
+const GOAL_LABEL = {cut:'Cutting', maintain:'Maintaining', bulk:'Bulking'};
 function saveProfile(){
   const name=$('f-pname').value.trim();
   if(!name) return toast('Name required');
   S.profile.name = name;
+  S.profile.goal = goalSel;
   S.profile.calTarget = +$('f-pcal').value || 2400;
   S.profile.proTarget = +$('f-ppro').value || 180;
   S.profile.carbTarget = +$('f-pcarb').value || 250;
@@ -1890,17 +1907,17 @@ function coachReply(q){
 function ask(q){ $('chat-in').value=q; send(); }
 
 let chatHist = [];
-/* pull machine-readable [[LOG_MEAL:{...}]] tags out of a coach reply → clean text + meals */
+/* pull machine-readable tags out of a coach reply → clean text + meals + target suggestions */
 function parseCoachMeals(text){
-  const meals=[];
-  const clean = String(text).replace(/\[\[LOG_MEAL:(\{[\s\S]*?\})\]\]/g, (_,j)=>{
-    try{ const o=JSON.parse(j); if(o && o.name) meals.push(o); }catch(e){}
-    return '';
-  }).replace(/\n{3,}/g,'\n\n').trim();
-  return {clean, meals};
+  const meals=[], targets=[];
+  const clean = String(text)
+    .replace(/\[\[LOG_MEAL:(\{[\s\S]*?\})\]\]/g, (_,j)=>{ try{ const o=JSON.parse(j); if(o && o.name) meals.push(o); }catch(e){} return ''; })
+    .replace(/\[\[SET_TARGETS:(\{[\s\S]*?\})\]\]/g, (_,j)=>{ try{ const o=JSON.parse(j); if(o) targets.push(o); }catch(e){} return ''; })
+    .replace(/\n{3,}/g,'\n\n').trim();
+  return {clean, meals, targets};
 }
 function coachMsgHtml(rawText){
-  const {clean, meals} = parseCoachMeals(rawText);
+  const {clean, meals, targets} = parseCoachMeals(rawText);
   let html = `<div class="msg ai">${esc(clean)}</div>`;
   html += meals.map(meal=>{
     const cal=+meal.cal||0, pro=+(meal.protein!=null?meal.protein:meal.pro)||0,
@@ -1908,7 +1925,22 @@ function coachMsgHtml(rawText){
     const payload=encodeURIComponent(JSON.stringify({name:meal.name, cal, pro, carb, fat}));
     return `<button class="logmeal" onclick="logCoachMeal('${payload}')">+ Log “${esc(meal.name)}” · ${cal} kcal · ${pro}P · ${carb}C · ${fat}F</button>`;
   }).join('');
+  html += targets.map(t=>{
+    const cal=+t.cal||+t.calories||0, pro=+(t.protein!=null?t.protein:t.pro)||0,
+          carb=+(t.carbs!=null?t.carbs:t.carb)||0, fat=+t.fat||0;
+    const payload=encodeURIComponent(JSON.stringify({cal, pro, carb, fat}));
+    return `<button class="logmeal" onclick="applyCoachTargets('${payload}')">✓ Set my targets · ${cal} kcal · ${pro}P · ${carb}C · ${fat}F</button>`;
+  }).join('');
   return html;
+}
+function applyCoachTargets(payload){
+  let t; try{ t=JSON.parse(decodeURIComponent(payload)); }catch(e){ return; }
+  S.profile=S.profile||{};
+  if(t.cal) S.profile.calTarget=t.cal;
+  if(t.pro) S.profile.proTarget=t.pro;
+  if(t.carb) S.profile.carbTarget=t.carb;
+  if(t.fat) S.profile.fatTarget=t.fat;
+  store.save(); renderAll(); toast('Targets updated ✓ — see your dashboard');
 }
 function logCoachMeal(payload){
   let m; try{ m=JSON.parse(decodeURIComponent(payload)); }catch(e){ return; }
@@ -1929,6 +1961,7 @@ function buildContext(){
   const prog = workoutFor(todaysDay()) || PROGRAM[0];
   return JSON.stringify({
     name: p.name,
+    goal: p.goal || 'not set (ask them if it matters)',
     calorieTarget: p.calTarget, proteinTarget: p.proTarget, carbTarget: carbTarget(), fatTarget: fatTarget(),
     todayCalories: cal, todayProtein: pro, todayCarbs: carb, todayFat: fat,
     mealsToday: mealsToday().map(m=>`${m.name} (${m.cal} kcal, ${m.pro}g protein, ${m.carb||0}g carbs, ${m.fat||0}g fat, ${m.time})`),
