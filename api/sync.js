@@ -58,6 +58,14 @@ export default async function handler(req, res) {
       if (!id || !state) return res.status(400).json({ error: 'id and state required' });
       const clean = String(id).replace(/[^a-f0-9]/gi, '');
       if (!clean) return res.status(400).json({ error: 'bad id' });
+      // Protect admin-pushed schedules: if the server has a newer admin push than what the
+      // member is sending, preserve the server's schedule so a stale member sync can't clobber it.
+      const existing = await readUser(clean);
+      if (existing && existing.state &&
+          (existing.state._adminSchedulePushedAt || 0) > (state._adminSchedulePushedAt || 0)) {
+        state.schedule = existing.state.schedule;
+        state._adminSchedulePushedAt = existing.state._adminSchedulePushedAt;
+      }
       const doc = { state, updated: Date.now() };
       await put(`users/${clean}.json`, JSON.stringify(doc), {
         access: 'public', addRandomSuffix: false, allowOverwrite: true,
