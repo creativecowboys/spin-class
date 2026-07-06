@@ -296,6 +296,7 @@ function fillSched(i){
 async function saveSched(i){
   const m=MEMBERS[i];
   m.state.updatedAt=Date.now();
+  m.state._adminSchedulePushedAt=now;
   await api('/api/admin-user',{method:'PUT',body:JSON.stringify({id:m.id,state:m.state})});
   toast('Schedule pushed to '+(((m.state.profile||{}).name)||'member')+' 🚀 (they get it on next app open)');
 }
