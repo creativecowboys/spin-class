@@ -193,6 +193,7 @@
   .inputrow{display:flex;gap:8px;padding:8px 0 10px;flex-shrink:0;}
   .inputrow input{flex:1;padding:14px 16px;border-radius:24px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:15px;outline:none;}
   .inputrow button{width:48px;height:48px;border-radius:50%;border:none;background:var(--accent);color:#0b0b0f;font-size:19px;font-weight:900;cursor:pointer;flex-shrink:0;}
+  .inputrow .coach-cam{width:48px;height:48px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;flex-shrink:0;}
   /* ---------- bottom nav ---------- */
   nav{
     position:absolute;bottom:0;left:0;right:0;display:flex;
@@ -533,7 +534,8 @@
           <div class="chip" onclick="ask('Plan tomorrow\'s workout')">Tomorrow's workout</div>
         </div>
         <div class="inputrow">
-          <input id="chat-in" placeholder="Ask your coach…" onkeydown="if(event.key==='Enter')send()">
+          <label class="coach-cam" title="Scan a nutrition label">📷<input type="file" accept="image/*" onchange="onCoachPhoto(this)" style="display:none;"></label>
+          <input id="chat-in" placeholder="Ask, or scan a label…" onkeydown="if(event.key==='Enter')send()">
           <button onclick="send()">↑</button>
         </div>
       </div>
@@ -1931,6 +1933,47 @@ async function send(){
   msgs.scrollTop=msgs.scrollHeight;
   S.chat = chatHist.slice(-60);
   store.save();
+}
+
+/* scan a nutrition label → coach reads it (vision) → "+ Log" button via LOG_MEAL tag */
+async function onCoachPhoto(input){
+  const file=input.files && input.files[0]; input.value='';
+  if(!file) return;
+  let dataUrl;
+  try{ dataUrl=await compressImage(file, 1100, 0.82); }catch(e){ return toast('Couldn\'t read that image'); }
+  sendCoachImage(dataUrl);
+}
+async function sendCoachImage(dataUrl){
+  const m=/^data:(image\/\w+);base64,(.+)$/.exec(dataUrl);
+  if(!m) return toast('Unsupported image');
+  const msgs=$('msgs');
+  msgs.insertAdjacentHTML('beforeend', `<div class="msg user" style="padding:6px;"><img src="${dataUrl}" style="max-width:190px;border-radius:12px;display:block;"></div>`);
+  msgs.scrollTop=msgs.scrollHeight;
+  $('typing').classList.add('on');
+  const imgMsg={role:'user', content:[
+    {type:'image', source:{type:'base64', media_type:m[1], data:m[2]}},
+    {type:'text', text:'This is a nutrition label. Read it and tell me the calories, protein, carbs, and fat for one serving (note the serving size). If you can read real numbers, add the log tag so I can save it.'}
+  ]};
+  let reply=null;
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({messages:[...chatHist, imgMsg], context:buildContext()})});
+    const data=await r.json();
+    if(r.ok && data.text) reply=data.text;
+  }catch(e){}
+  $('typing').classList.remove('on');
+  // persist a text placeholder, NOT the image, so S.chat stays small
+  chatHist.push({role:'user', content:'📷 Sent a nutrition label'});
+  if(reply){
+    chatHist.push({role:'assistant', content:reply});
+    msgs.insertAdjacentHTML('beforeend', coachMsgHtml(reply));
+  } else {
+    const fb="Couldn't read that one — try a clearer, well-lit, straight-on photo of the label.";
+    chatHist.push({role:'assistant', content:fb});
+    msgs.insertAdjacentHTML('beforeend', `<div class="msg ai">${fb}</div>`);
+  }
+  msgs.scrollTop=msgs.scrollHeight;
+  S.chat=chatHist.slice(-60); store.save();
 }
 
 /* =============== onboarding =============== */
