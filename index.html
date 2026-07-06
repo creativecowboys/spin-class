@@ -1274,7 +1274,9 @@ function saveCardio(){
 }
 let openDay = null;
 function renderProgram(){
-  const cur = todaysDay();
+  // only today's SCHEDULED program day gets the badge / expands by default
+  const ref = S.schedule && S.schedule[todayISO()];
+  const cur = (typeof ref==='number') ? ref : -1;
   if(openDay===null) openDay = cur;
   $('program').innerHTML = PROGRAM.map((p,i)=>{
     const today = i===cur;
@@ -1301,9 +1303,9 @@ function logSession(i){
   S.lastDone = S.lastDone || {};
   S.lastDone[i] = dateStr();
   S.programDay = (i+1)%7;
-  openDay = S.programDay;
+  openDay = -1;
   store.save(); renderAll();
-  toast(p.name+' crushed! Next up: '+PROGRAM[S.programDay].name+' 🔥');
+  toast(p.name+' logged ✓');
 }
 
 function renderTrain(){
@@ -1315,12 +1317,22 @@ function renderTrain(){
   }
   $('train-normal').style.display='block';
   $('train-active').style.display='none';
-  const ti = todaysDay(), tp = workoutFor(ti) || PROGRAM[0];
-  const scheduled = S.schedule && S.schedule[todayISO()]!=null;
-  const doneToday = S.workouts.some(w=>w.date===todayISO() && w.day===ti);
-  $('t-today-label').textContent = doneToday ? 'Done today' : (scheduled ? 'Scheduled for today' : "Today's workout");
-  $('t-today').textContent = tp.name;
-  $('t-today-sub').textContent = doneToday ? 'In the books. Recovery counts too.' : tp.sub + ' — it\'s queued up below.';
+  const todayRef = (S.schedule && S.schedule[todayISO()]!=null) ? S.schedule[todayISO()] : null;
+  const trainedToday = S.workouts.some(w=>w.date===todayISO());
+  if(todayRef==null){
+    // nothing assigned to today
+    $('t-today-label').textContent = trainedToday ? 'Nice work today' : 'Today';
+    $('t-today').textContent = trainedToday ? 'Logged ✓' : 'Rest day';
+    $('t-today-sub').textContent = trainedToday
+      ? 'Nothing was on the calendar, but you got after it anyway.'
+      : 'No exercise scheduled today — rest up and enjoy your day.';
+  } else {
+    const tp = workoutFor(todayRef) || PROGRAM[0];
+    const done = S.workouts.some(w=>w.date===todayISO() && w.day===todayRef);
+    $('t-today-label').textContent = done ? 'Done today' : 'Scheduled for today';
+    $('t-today').textContent = tp.name;
+    $('t-today-sub').textContent = done ? 'In the books. Recovery counts too.' : tp.sub + ' — it\'s queued up below.';
+  }
   renderWeek();
   renderProgram();
   const el = $('workout-list');
@@ -1526,7 +1538,7 @@ function finishWorkout(){
   S.lastDone = S.lastDone || {};
   S.lastDone[a.ref] = dateStr();
   if(typeof a.ref==='number' && (S.programDay||0)===a.ref) S.programDay = (a.ref+1)%7;
-  if(typeof S.programDay==='number') openDay = S.programDay;
+  openDay = -1;
   S.active = null;
   store.save(); renderAll();
   toast(a.name+' done — '+setsDone+' sets, '+vol.toLocaleString()+' lb moved! 🔥');
