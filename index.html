@@ -67,6 +67,7 @@
   .bar.pro i{background:var(--accent3);}
   .bar.carb i{background:var(--accent4);}
   .bar.fat i{background:var(--accent2);}
+  .bar.water i{background:var(--accent3);}
   /* ---------- dose alert ---------- */
   .dosealert{
     display:flex;align-items:center;gap:12px;background:linear-gradient(120deg,rgba(255,61,113,.15),rgba(255,176,32,.08));
@@ -433,6 +434,19 @@
           <button onclick="mealDayShift(1)">›</button>
         </div>
         <div class="rings" id="meal-rings"></div>
+      </div>
+      <div class="card" id="water-card" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <b style="font-size:14px;">Hydration</b>
+          <span id="water-display" style="font-weight:800;font-size:14px;color:var(--accent3);">0 / 64 oz</span>
+        </div>
+        <div class="bar water"><i id="water-bar" style="width:0%"></i></div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          <button class="btn ghost small" onclick="logWater(8)">+8 oz</button>
+          <button class="btn ghost small" onclick="logWater(16)">+16 oz</button>
+          <button class="btn ghost small" onclick="logWater(24)">+24 oz</button>
+          <button class="btn ghost small" style="color:var(--muted);margin-left:auto;" onclick="logWater(-999)">Reset</button>
+        </div>
       </div>
       <div class="card" id="meal-list"><div class="empty">Nothing logged. Fuel up. 🍳</div></div>
       <button class="btn" onclick="openModal('meal')">+ Log a Meal</button>
@@ -815,7 +829,7 @@ let S = store.load();
 const needsOnboard = !S || !S.profile;
 if(!S) S = {meals:[], workouts:[], weights:[], streak:0, stack:[]};
 if([scrubSeed(), migrateWeights(), stripDayNames()].some(Boolean)) try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
-const P = () => S.profile || {name:'Dave', calTarget:2400, proTarget:180, carbTarget:250, fatTarget:70, goalWeight:null};
+const P = () => S.profile || {name:'Dave', calTarget:2400, proTarget:180, carbTarget:250, fatTarget:70, waterGoal:64, goalWeight:null};
 function carbTarget(){ return (S.profile && S.profile.carbTarget) || 250; }
 function fatTarget(){ return (S.profile && S.profile.fatTarget) || 70; }
 
@@ -1133,6 +1147,7 @@ function renderMeals(){
   const iso = curMealDay(), today = todayISO();
   const t = dayTotals(iso);
   renderMealRings(t);
+  renderWater(iso);
   const lbl = $('meal-day-label');
   if(lbl) lbl.textContent = iso===today ? 'Today'
     : new Date(iso+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
@@ -1145,6 +1160,24 @@ function renderMeals(){
       <div class="val">${m.cal}<small>KCAL · ${m.pro}P · ${m.carb||0}C · ${m.fat||0}F</small></div>
     </div>`).join('') : '<div class="empty">Nothing logged. Fuel up. 🍳</div>';
 }
+function waterToday(iso){ return (S.waterLog && S.waterLog[iso]) || 0; }
+function logWater(oz){
+  const iso = curMealDay();
+  S.waterLog = S.waterLog || {};
+  if(oz===-999){ S.waterLog[iso]=0; }
+  else { S.waterLog[iso] = Math.max(0, (S.waterLog[iso]||0) + oz); }
+  store.save(); renderWater(iso);
+}
+function renderWater(iso){
+  const el = $('water-card'); if(!el) return;
+  const p = P();
+  const goal = p.waterGoal || 64;
+  const got = waterToday(iso);
+  const pct = Math.min(100, got/goal*100);
+  const disp = $('water-display'); if(disp) disp.textContent = got+' / '+goal+' oz';
+  const bar = $('water-bar'); if(bar) bar.style.width = pct+'%';
+}
+
 
 /* =============== workouts: program days + user-built custom workouts =============== */
 /* a schedule ref is either a number (PROGRAM index) or a "c:<id>" string (custom) */
@@ -1838,6 +1871,7 @@ function openModal(kind, arg){
       <div class="field"><label>Fats (g) / day</label><input id="f-pfat" type="number" value="${fatTarget()}"></div>
     </div>
     <div class="field"><label>Goal weight (lbs)</label><input id="f-pgw" type="number" step="0.1" value="${p.goalWeight||''}"></div>
+    <div class="field"><label>Daily water goal (oz)</label><input id="f-pwg" type="number" value="${p.waterGoal||64}" placeholder="64"></div>
     <div class="field"><label>4-digit PIN — your name + PIN logs you in on any device</label><input id="f-ppin" type="tel" inputmode="numeric" maxlength="4" value="${esc(String(S.pin||''))}" placeholder="e.g. 4242" autocomplete="off"></div>
     <button class="btn" onclick="saveProfile()">Save</button>`;
   }
@@ -1933,6 +1967,7 @@ function saveProfile(){
   S.profile.carbTarget = +$('f-pcarb').value || 250;
   S.profile.fatTarget = +$('f-pfat').value || 70;
   S.profile.goalWeight = +$('f-pgw').value || null;
+  S.profile.waterGoal = +$('f-pwg').value || 64;
   const pin = $('f-ppin').value.replace(/\D/g,'');
   if(pin && pin.length!==4) return toast('PIN must be 4 digits');
   if(pin) S.pin = pin;
