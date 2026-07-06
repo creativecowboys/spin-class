@@ -48,6 +48,22 @@
   .pday-h{background:var(--surface2);padding:12px 14px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
   .pday-h .field{margin-bottom:0;}
   .pday-b{padding:10px 14px 14px;}
+  .exmodal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-end;justify-content:center;z-index:100;}
+  .exmodal.open{display:flex;}
+  .exmodalcard{background:var(--surface);border:1px solid var(--border);border-radius:18px 18px 0 0;width:100%;max-width:640px;max-height:86vh;display:flex;flex-direction:column;padding:16px 16px calc(16px + env(safe-area-inset-bottom));}
+  @media(min-width:641px){.exmodal{align-items:center;} .exmodalcard{border-radius:18px;max-height:80vh;}}
+  .exmodalhead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;}
+  .exmodalhead b{font-size:16px;font-weight:900;}
+  #ex-search{width:100%;margin-bottom:10px;}
+  .exchips{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:4px;flex-wrap:nowrap;}
+  .exchip{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:14px;padding:6px 12px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;}
+  .exchip.on{background:var(--accent);color:#0b0b0f;border-color:var(--accent);}
+  .exlist{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  .exrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 4px;border-bottom:1px solid var(--border);cursor:pointer;}
+  .exrow:hover{background:var(--surface2);}
+  .exrow b{font-size:14px;}
+  .exrow small{color:var(--muted);font-size:11.5px;display:block;}
+  .exrow .add{color:var(--accent);font-weight:900;font-size:20px;flex-shrink:0;}
   .exline{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
   .exline input.nm{flex:3;min-width:160px;}
   .exline input.tg{flex:1.2;min-width:80px;}
@@ -114,6 +130,15 @@
   </div>
 
   <div class="toast" id="toast">Saved</div>
+</div>
+
+<div class="exmodal" id="exmodal" onclick="if(event.target===this)closeExPicker()">
+  <div class="exmodalcard">
+    <div class="exmodalhead"><b id="exmodal-title">Add from Library</b><button class="btn small" onclick="closeExPicker()">Done</button></div>
+    <input id="ex-search" placeholder="Search exercises…" oninput="exSearch=this.value;renderExList()">
+    <div class="exchips" id="ex-chips"></div>
+    <div class="exlist" id="ex-list"></div>
+  </div>
 </div>
 
 <datalist id="exdl"></datalist>
@@ -368,9 +393,10 @@ function renderBuilder(){
             <button class="icobtn" onclick="moveEx(${di},${ei},1)">↓</button>
             <button class="icobtn" onclick="PB[${di}].ex.splice(${ei},1);renderBuilder()">✕</button>
           </div>`).join('')}
-        <div class="exline">
-          <input class="nm" list="exdl" id="add-${di}" placeholder="Add exercise — type to search the ${EXDB.length}-exercise library, or enter anything custom">
-          <button class="btn ghost small" onclick="addEx(${di})">+ Add</button>
+        <div class="exline" style="margin-top:4px;">
+          <button class="btn small" onclick="openExPicker(${di})">+ Add from Library</button>
+          <input class="nm" list="exdl" id="add-${di}" placeholder="…or type a custom exercise">
+          <button class="btn ghost small" onclick="addEx(${di})">Add</button>
         </div>
       </div>
     </div>`).join('');
@@ -386,6 +412,53 @@ function addEx(di){
   if(!v) return;
   PB[di].ex.push([v,'3 × 8–12','90 s']);
   renderBuilder();
+}
+/* ---------- exercise library picker ---------- */
+let exPickDay=null, exSearch='', exGroup='All';
+function mGroup(m){
+  if(/Chest/.test(m)) return 'Chest';
+  if(/Lats|Back|Traps/.test(m)) return 'Back';
+  if(/Delts/.test(m)) return 'Shoulders';
+  if(/Biceps|Brachi/.test(m)) return 'Biceps';
+  if(/Triceps/.test(m)) return 'Triceps';
+  if(/Forearm|Grip/.test(m)) return 'Forearms';
+  if(/Quads/.test(m)) return 'Quads';
+  if(/Hamstring/.test(m)) return 'Hams';
+  if(/Glute/.test(m)) return 'Glutes';
+  if(/Calves/.test(m)) return 'Calves';
+  if(/Abs|Core|Oblique/.test(m)) return 'Abs/Core';
+  return 'Other';
+}
+function openExPicker(di){
+  exPickDay=di; exSearch=''; exGroup='All';
+  $('exmodal-title').textContent='Add to Day '+(di+1)+(PB[di].name?' — '+PB[di].name:'');
+  $('ex-search').value='';
+  renderExChips(); renderExList();
+  $('exmodal').classList.add('open');
+  setTimeout(()=>$('ex-search').focus(),100);
+}
+function closeExPicker(){ $('exmodal').classList.remove('open'); exPickDay=null; }
+function renderExChips(){
+  const groups=['All','Chest','Back','Shoulders','Biceps','Triceps','Forearms','Quads','Hams','Glutes','Calves','Abs/Core','Other'];
+  $('ex-chips').innerHTML=groups.map(g=>`<div class="exchip${g===exGroup?' on':''}" onclick="exGroup='${g}';renderExChips();renderExList()">${g}</div>`).join('');
+}
+function renderExList(){
+  const q=exSearch.trim().toLowerCase(); const rows=[];
+  for(let i=0;i<EXDB.length;i++){
+    const e=EXDB[i];
+    if(exGroup!=='All' && mGroup(e[2])!==exGroup) continue;
+    if(q && !(e[0].toLowerCase().includes(q)||e[2].toLowerCase().includes(q)||e[1].toLowerCase().includes(q))) continue;
+    rows.push(`<div class="exrow" onclick="addExFromLib(${i})"><div><b>${esc(e[0])}</b><small>${esc(e[2])} · ${esc(e[1])}</small></div><div class="add">+</div></div>`);
+    if(rows.length>=150) break;
+  }
+  $('ex-list').innerHTML=rows.join('')||'<div class="muted" style="padding:14px 4px;">No matches.</div>';
+}
+function addExFromLib(i){
+  if(exPickDay==null) return;
+  const e=EXDB[i];
+  PB[exPickDay].ex.push([e[0],'3 × 8–12','90 s']);
+  toast(e[0]+' added ✓');
+  renderBuilder(); // modal stays open so you can add several
 }
 async function pushProgram(){
   for(const d of PB){ if(!d.name.trim()) return toast('Every day needs a name'); }
