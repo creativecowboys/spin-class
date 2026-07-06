@@ -124,6 +124,14 @@
   .daysel button.sel{border-color:var(--accent);color:var(--accent);background:rgba(204,255,0,.1);}
   .daysel button.today{box-shadow:inset 0 0 0 1px var(--accent2);}
   .daysel button .dot{display:block;font-size:9px;margin-top:3px;color:var(--accent3);min-height:11px;}
+  .rings{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px;}
+  .ring{text-align:center;}
+  .ring svg{width:100%;max-width:82px;display:block;margin:0 auto;}
+  .ring-bg{fill:none;stroke:var(--surface2);stroke-width:7;}
+  .ring-fg{fill:none;stroke-width:7;stroke-linecap:round;transition:stroke-dashoffset .5s ease;}
+  .ring-val{fill:var(--text);font-size:16px;font-weight:900;text-anchor:middle;}
+  .ring-tgt{fill:var(--muted);font-size:9px;text-anchor:middle;}
+  .ring-lbl{font-size:9.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-top:3px;}
   .cardio-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
   .cardio-grid button{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:12px 6px;font-size:12px;font-weight:700;cursor:pointer;}
   .cardio-grid button.on{border-color:var(--accent);color:var(--accent);background:rgba(204,255,0,.1);}
@@ -420,9 +428,9 @@
           <b id="meal-day-label">Today</b>
           <button onclick="mealDayShift(1)">›</button>
         </div>
-        <div style="color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.3px;margin-bottom:10px;" id="m-total">0 kcal · 0P · 0C · 0F</div>
-        <div id="meal-list"><div class="empty">Nothing logged. Fuel up. 🍳</div></div>
+        <div class="rings" id="meal-rings"></div>
       </div>
+      <div class="card" id="meal-list"><div class="empty">Nothing logged. Fuel up. 🍳</div></div>
       <button class="btn" onclick="openModal('meal')">+ Log a Meal</button>
     </section>
 
@@ -1084,10 +1092,33 @@ function dayTotals(iso){
     carb:list.reduce((a,m)=>a+(m.carb||0),0), fat:list.reduce((a,m)=>a+(m.fat||0),0)
   };
 }
+function ringHtml(label, val, target, colorVar){
+  const r=32, C=2*Math.PI*r;
+  const pct = target>0 ? Math.min(1, val/target) : 0;
+  const off = (C*(1-pct)).toFixed(1);
+  return `<div class="ring">
+    <svg viewBox="0 0 76 76">
+      <circle class="ring-bg" cx="38" cy="38" r="${r}"></circle>
+      <circle class="ring-fg" style="stroke:var(${colorVar})" cx="38" cy="38" r="${r}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off}" transform="rotate(-90 38 38)"></circle>
+      <text x="38" y="37" class="ring-val">${val}</text>
+      <text x="38" y="49" class="ring-tgt">/${target}</text>
+    </svg>
+    <div class="ring-lbl">${label}</div>
+  </div>`;
+}
+function renderMealRings(t){
+  const el=$('meal-rings'); if(!el) return;
+  const p=P();
+  el.innerHTML =
+    ringHtml('Cals', t.cal, p.calTarget, '--accent') +
+    ringHtml('Protein', t.pro, p.proTarget, '--accent3') +
+    ringHtml('Carbs', t.carb, carbTarget(), '--accent4') +
+    ringHtml('Fats', t.fat, fatTarget(), '--accent2');
+}
 function renderMeals(){
   const iso = curMealDay(), today = todayISO();
   const t = dayTotals(iso);
-  $('m-total').textContent = t.cal+' kcal · '+t.pro+'P · '+t.carb+'C · '+t.fat+'F';
+  renderMealRings(t);
   const lbl = $('meal-day-label');
   if(lbl) lbl.textContent = iso===today ? 'Today'
     : new Date(iso+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
