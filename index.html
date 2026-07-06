@@ -986,11 +986,14 @@ function teamWeekISO(){
    shows instantly, before the server round-trip; everyone else from COMM */
 function effectiveMembers(){
   if(!COMM || !COMM.members) return [];
-  return COMM.members.map(m=>{
-    if(m.key!==COMM.you) return m;
-    const local=(S.workouts||[]).map(w=>({type:w.type||'Workout', dur:w.dur||0, sets:w.setsDone||0, vol:w.vol||0, when:w.when||'', date:w.date||''}));
-    return {...m, workouts:local, streak:S.streak||0, lastActive:Date.now()};
-  });
+  const myGroup = S.profile && S.profile.group;
+  return COMM.members
+    .filter(m => !myGroup || !m.group || m.group === myGroup)
+    .map(m=>{
+      if(m.key!==COMM.you) return m;
+      const local=(S.workouts||[]).map(w=>({type:w.type||'Workout', dur:w.dur||0, sets:w.setsDone||0, vol:w.vol||0, when:w.when||'', date:w.date||''}));
+      return {...m, workouts:local, streak:S.streak||0, lastActive:Date.now()};
+    });
 }
 function renderTeamWeek(){
   const el = $('team-week'); if(!el) return;
@@ -1012,26 +1015,21 @@ function renderTeamWeek(){
 function renderTeamFeed(){
   const el = $('team-feed'); if(!el) return;
   if(!COMM){ el.innerHTML='<div class="empty">Can\'t reach the crew right now.</div>'; return; }
-  const mem = effectiveMembers();
-  const items = [];
-  mem.forEach(m=>m.workouts.forEach((w,idx)=>items.push({m,w,idx})));
-  items.sort((a,b)=>(b.w.date||'').localeCompare(a.w.date||'') || a.idx-b.idx);
-  const feed = items.slice(0,40).map(({m,w})=>{
-    const stats = [w.dur?w.dur+' min':'', w.sets?w.sets+' sets':'', w.vol?w.vol.toLocaleString()+' lb':''].filter(Boolean).join(' · ');
-    return `<div class="feed-item">
-      <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
-      <div class="info"><b>${esc(m.name)}</b><small><b class="wtype">${esc(w.type)}</b>${stats?' · '+esc(stats):''}${w.when?' · '+esc(w.when):''}</small></div>
-    </div>`;
-  }).join('');
-  // members who haven't logged a workout yet still appear on the roster
-  const idle = mem.filter(m=>!m.workouts.length).map(m=>`
-    <div class="feed-item" style="opacity:.65;">
+  const mem = [...effectiveMembers()].sort((a,b)=>b.lastActive-a.lastActive);
+  const html = mem.map(m=>{
+    if(!m.workouts.length) return `<div class="feed-item" style="opacity:.65;">
       <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
       <div class="info"><b>${esc(m.name)}${m.key===COMM.you?' <small style="color:var(--muted)">(you)</small>':''}</b><small>no workouts logged yet</small></div>
-    </div>`).join('');
-  el.innerHTML = (feed+idle) || '<div class="empty">Nobody\'s trained yet. Someone go first. 🏋️</div>';
+    </div>`;
+    const w=[...m.workouts].sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+    const stats=[w.dur?w.dur+' min':'',w.sets?w.sets+' sets':'',w.vol?w.vol.toLocaleString()+' lb':''].filter(Boolean).join(' · ');
+    return `<div class="feed-item">
+      <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
+      <div class="info"><b>${esc(m.name)}${m.key===COMM.you?' <small style="color:var(--muted)">(you)</small>':''}</b><small><b class="wtype">${esc(w.type)}</b>${stats?' · '+esc(stats):''}${w.when?' · '+esc(w.when):''}</small></div>
+    </div>`;
+  }).join('');
+  el.innerHTML = html || '<div class="empty">Nobody\'s trained yet. Someone go first.</div>';
 }
-
 let teamTab = 'chat';
 function teamView(v){
   teamTab = v;
