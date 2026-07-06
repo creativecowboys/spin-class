@@ -324,9 +324,6 @@
   .exrow small{color:var(--muted);font-size:11px;}
   .exrow .go{color:var(--accent);font-weight:900;font-size:18px;}
   .swapbtn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:11.5px;font-weight:700;cursor:pointer;flex-shrink:0;}
-  .histpanel{background:var(--surface2);border-radius:8px;padding:8px 11px;font-size:12px;color:var(--accent3);margin:2px 0 8px;line-height:1.5;}
-  .histpanel b{color:var(--text);}
-  .histpanel small{display:block;color:var(--muted);font-size:10px;font-weight:400;margin-top:2px;}
   .pickchips{display:flex;gap:8px;overflow-x:auto;padding:6px 0 10px;scrollbar-width:none;}
   .pickchips::-webkit-scrollbar{display:none;}
   .pickchip{flex-shrink:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:20px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;}
@@ -1391,18 +1388,17 @@ function cycleHist(xi){
   const x=S.active.ex[xi];
   const hist=exerciseHistory(x.name);
   if(!hist.length){ toast('No past sets for '+x.name+' yet'); return; }
-  if(x.histIdx==null) x.histIdx=0;
-  else if(x.histIdx>=hist.length-1) x.histIdx=null; // cycled through all → close
-  else x.histIdx++;
+  const cur = (x.histIdx==null)?0:x.histIdx;
+  x.histIdx = (cur+1) % hist.length; // cycle to the next-older session, wrap to most recent
   renderActive();
 }
-function histPanelHtml(x){
-  if(x.histIdx==null) return '';
-  const hist=exerciseHistory(x.name); const h=hist[x.histIdx];
-  if(!h) return '';
-  const lbl = h.date ? new Date(h.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : (h.when||'');
-  const sets = h.sets.map(s=>isTimed(x.name)?(s.r+'s'+(s.w?'@'+s.w:'')):(s.w+'×'+s.r)).join('  ');
-  return `<div class="histpanel"><b>${esc(lbl)}</b> — ${esc(sets)} <small>tap “past” for older · ${x.histIdx+1}/${hist.length}</small></div>`;
+/* the past session currently referenced for an exercise (defaults to most recent) */
+function histRef(x){
+  const hist=exerciseHistory(x.name);
+  if(!hist.length) return null;
+  const idx = (x.histIdx==null)?0:x.histIdx;
+  const s = hist[idx]||null;
+  return s ? {session:s, idx, count:hist.length} : null;
 }
 function startWorkout(ref){
   const p = workoutFor(ref);
@@ -1436,24 +1432,29 @@ function renderActive(){
     <h2 class="section">Exercises</h2>` +
     a.ex.map((x,xi)=>{
       const complete = x.sets.length && x.sets.every(s=>s.done);
+      const ref = histRef(x); // past session whose numbers fill the fields (placeholders)
+      const refLbl = ref ? (ref.session.date ? new Date(ref.session.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : (ref.session.when||'')) : null;
       return `<div class="wx${complete?' complete':''}">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
           <div class="wx-name${x.big?' big':''}">${esc(x.name)} ${complete?'✓':''}</div>
           <div style="display:flex;gap:6px;flex-shrink:0;">
-            <button class="swapbtn" onclick="cycleHist(${xi})">↺ past</button>
+            ${ref?`<button class="swapbtn" onclick="cycleHist(${xi})">↺ past</button>`:''}
             <button class="swapbtn" onclick="openPicker('swap',${xi})">⇄ swap</button>
           </div>
         </div>
         <div class="wx-meta">Target ${x.target} · Rest ${x.rest}</div>
-        ${histPanelHtml(x)}
-        ${(x.histIdx==null&&x.lastW)?`<div class="wx-last">Last time: ${x.lastW} lbs</div>`:''}
-        ${x.sets.map((s,si)=>`
-          <div class="setrow${s.done?' done':''}">
+        ${ref?`<div class="wx-last">Faded numbers = ${esc(refLbl)}${ref.count>1?` · tap ↺ for older (${ref.idx+1}/${ref.count})`:''}</div>`:''}
+        ${x.sets.map((s,si)=>{
+          const ps = ref ? ref.session.sets[si] : null;
+          const wPl = ps ? ps.w : (x.lastW||'lbs');
+          const rPl = ps!=null ? ps.r : (isTimed(x.name)?'sec':'reps');
+          return `<div class="setrow${s.done?' done':''}">
             <div class="sn">${si+1}</div>
-            <input type="number" inputmode="decimal" placeholder="${x.lastW||'lbs'}" value="${s.w}" onchange="setVal(${xi},${si},'w',this.value)">
-            <input type="number" inputmode="numeric" placeholder="${isTimed(x.name)?'sec':'reps'}" value="${s.r}" onchange="setVal(${xi},${si},'r',this.value)">
+            <input type="number" inputmode="decimal" placeholder="${wPl}" value="${s.w}" onchange="setVal(${xi},${si},'w',this.value)">
+            <input type="number" inputmode="numeric" placeholder="${rPl}" value="${s.r}" onchange="setVal(${xi},${si},'r',this.value)">
             <div class="check${s.done?' done':''}" onclick="toggleSet(${xi},${si})">✓</div>
-          </div>`).join('')}
+          </div>`;
+        }).join('')}
         <button class="addset" onclick="addSet(${xi})">+ Add Set</button>
       </div>`;
     }).join('') +
