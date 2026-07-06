@@ -112,14 +112,16 @@
   .field{margin-bottom:12px;}
   .field label{display:block;font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
   .field input,.field select{
-    width:100%;padding:13px 14px;border-radius:12px;border:1px solid var(--border);
+    width:100%;min-width:0;padding:13px 14px;border-radius:12px;border:1px solid var(--border);
     background:var(--surface2);color:var(--text);font-size:15px;outline:none;text-align:left;
   }
-  /* date/time inputs center their value on WebKit by default — left-align to match */
-  .field input::-webkit-date-and-time-value{text-align:left;}
+  /* native date/time inputs center + overflow on iOS — strip default look, left-align the value */
+  .field input[type=date],.field input[type=time]{-webkit-appearance:none;appearance:none;}
+  .field input::-webkit-date-and-time-value{text-align:left;margin:0;}
+  .field input::-webkit-datetime-edit{text-align:left;padding:0;}
   .field input:focus,.field select:focus{border-color:var(--accent);}
   .fieldrow{display:flex;gap:10px;}
-  .fieldrow .field{flex:1;}
+  .fieldrow .field{flex:1;min-width:0;}
   /* ---------- stack (peptides) ---------- */
   .daysel{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:12px;}
   .daysel button{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:9px;padding:8px 0 6px;font-size:11px;font-weight:800;cursor:pointer;text-align:center;line-height:1.1;}
