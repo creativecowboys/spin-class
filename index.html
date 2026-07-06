@@ -324,6 +324,9 @@
   .exrow small{color:var(--muted);font-size:11px;}
   .exrow .go{color:var(--accent);font-weight:900;font-size:18px;}
   .swapbtn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:11.5px;font-weight:700;cursor:pointer;flex-shrink:0;}
+  .histpanel{background:var(--surface2);border-radius:8px;padding:8px 11px;font-size:12px;color:var(--accent3);margin:2px 0 8px;line-height:1.5;}
+  .histpanel b{color:var(--text);}
+  .histpanel small{display:block;color:var(--muted);font-size:10px;font-weight:400;margin-top:2px;}
   .pickchips{display:flex;gap:8px;overflow-x:auto;padding:6px 0 10px;scrollbar-width:none;}
   .pickchips::-webkit-scrollbar{display:none;}
   .pickchip{flex-shrink:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:20px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;}
@@ -1375,6 +1378,32 @@ function reopenWorkout(wi){
 /* =============== live workout =============== */
 /* time-based holds log weight + seconds instead of weight × reps */
 function isTimed(name){ return /\bplank\b|wall sit|dead hang|hollow (body )?hold|l-sit|\bcarry\b|farmer'?s/i.test(name||''); }
+/* past sessions of a given exercise, newest first (from logged workout detail) */
+function exerciseHistory(name){
+  const out=[];
+  (S.workouts||[]).forEach(w=>{
+    const d = (w.detail||[]).find(x=>x.name===name);
+    if(d && d.sets && d.sets.length) out.push({date:w.date, when:w.when, sets:d.sets});
+  });
+  return out;
+}
+function cycleHist(xi){
+  const x=S.active.ex[xi];
+  const hist=exerciseHistory(x.name);
+  if(!hist.length){ toast('No past sets for '+x.name+' yet'); return; }
+  if(x.histIdx==null) x.histIdx=0;
+  else if(x.histIdx>=hist.length-1) x.histIdx=null; // cycled through all → close
+  else x.histIdx++;
+  renderActive();
+}
+function histPanelHtml(x){
+  if(x.histIdx==null) return '';
+  const hist=exerciseHistory(x.name); const h=hist[x.histIdx];
+  if(!h) return '';
+  const lbl = h.date ? new Date(h.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : (h.when||'');
+  const sets = h.sets.map(s=>isTimed(x.name)?(s.r+'s'+(s.w?'@'+s.w:'')):(s.w+'×'+s.r)).join('  ');
+  return `<div class="histpanel"><b>${esc(lbl)}</b> — ${esc(sets)} <small>tap “past” for older · ${x.histIdx+1}/${hist.length}</small></div>`;
+}
 function startWorkout(ref){
   const p = workoutFor(ref);
   if(!p) return toast('Workout not found');
@@ -1410,10 +1439,14 @@ function renderActive(){
       return `<div class="wx${complete?' complete':''}">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
           <div class="wx-name${x.big?' big':''}">${esc(x.name)} ${complete?'✓':''}</div>
-          <button class="swapbtn" onclick="openPicker('swap',${xi})">⇄ swap</button>
+          <div style="display:flex;gap:6px;flex-shrink:0;">
+            <button class="swapbtn" onclick="cycleHist(${xi})">↺ past</button>
+            <button class="swapbtn" onclick="openPicker('swap',${xi})">⇄ swap</button>
+          </div>
         </div>
         <div class="wx-meta">Target ${x.target} · Rest ${x.rest}</div>
-        ${x.lastW?`<div class="wx-last">Last time: ${x.lastW} lbs</div>`:''}
+        ${histPanelHtml(x)}
+        ${(x.histIdx==null&&x.lastW)?`<div class="wx-last">Last time: ${x.lastW} lbs</div>`:''}
         ${x.sets.map((s,si)=>`
           <div class="setrow${s.done?' done':''}">
             <div class="sn">${si+1}</div>
