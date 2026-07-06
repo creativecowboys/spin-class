@@ -2088,44 +2088,45 @@ async function send(){
 }
 
 /* scan a nutrition label → coach reads it (vision) → "+ Log" button via LOG_MEAL tag */
+function fileToDataUrl(file){
+  return new Promise((resolve,reject)=>{ const fr=new FileReader(); fr.onload=()=>resolve(fr.result); fr.onerror=reject; fr.readAsDataURL(file); });
+}
 async function onCoachPhoto(input){
   const file=input.files && input.files[0]; input.value='';
   if(!file) return;
-  let dataUrl;
-  try{ dataUrl=await compressImage(file, 1100, 0.82); }catch(e){ return toast('Couldn\'t read that image'); }
-  sendCoachImage(dataUrl);
+  sendCoachImage(file);
 }
-async function sendCoachImage(dataUrl){
-  const m=/^data:(image\/\w+);base64,(.+)$/.exec(dataUrl);
-  if(!m) return toast('Unsupported image');
+async function sendCoachImage(file){
   const msgs=$('msgs');
-  msgs.insertAdjacentHTML('beforeend', `<div class="msg user" style="padding:6px;"><img src="${dataUrl}" style="max-width:190px;border-radius:12px;display:block;"></div>`);
+  // attach the photo to the chat IMMEDIATELY so it never silently disappears
+  let previewUrl=''; try{ previewUrl=URL.createObjectURL(file); }catch(e){}
+  msgs.insertAdjacentHTML('beforeend', `<div class="msg user" style="padding:6px;"><img src="${previewUrl}" style="max-width:190px;border-radius:12px;display:block;"></div>`);
   msgs.scrollTop=msgs.scrollHeight;
   $('typing').classList.add('on');
+  // build an API-friendly image: compress to JPEG via canvas, fall back to the raw file
+  let dataUrl=null;
+  try{ dataUrl=await compressImage(file, 1100, 0.82); }catch(e){ dataUrl=null; }
+  if(!dataUrl){ try{ dataUrl=await fileToDataUrl(file); }catch(e){ dataUrl=null; } }
+  const m = dataUrl && /^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,([^]+)$/i.exec(dataUrl);
+  const finish=(who,txt,html)=>{ $('typing').classList.remove('on'); if(who) chatHist.push(who); chatHist.push({role:'assistant',content:txt}); msgs.insertAdjacentHTML('beforeend', html||`<div class="msg ai">${esc(txt)}</div>`); msgs.scrollTop=msgs.scrollHeight; S.chat=chatHist.slice(-60); store.save(); };
+  if(!m){
+    return finish({role:'user',content:'📷 Sent a photo'}, "I couldn't read that photo — snap a clearer, well-lit, straight-on shot of the label (a JPG or PNG works best) and try again.");
+  }
+  const mediaType = (m[1].toLowerCase()==='image/jpg')?'image/jpeg':m[1].toLowerCase();
   const imgMsg={role:'user', content:[
-    {type:'image', source:{type:'base64', media_type:m[1], data:m[2]}},
+    {type:'image', source:{type:'base64', media_type:mediaType, data:m[2]}},
     {type:'text', text:'This is a nutrition label. Read it and tell me the calories, protein, carbs, and fat for one serving (note the serving size). If you can read real numbers, add the log tag so I can save it.'}
   ]};
   let reply=null;
   try{
     const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({messages:[...chatHist, imgMsg], context:buildContext()})});
-    const data=await r.json();
+    const data=await r.json().catch(()=>({}));
     if(r.ok && data.text) reply=data.text;
   }catch(e){}
-  $('typing').classList.remove('on');
   // persist a text placeholder, NOT the image, so S.chat stays small
-  chatHist.push({role:'user', content:'📷 Sent a nutrition label'});
-  if(reply){
-    chatHist.push({role:'assistant', content:reply});
-    msgs.insertAdjacentHTML('beforeend', coachMsgHtml(reply));
-  } else {
-    const fb="Couldn't read that one — try a clearer, well-lit, straight-on photo of the label.";
-    chatHist.push({role:'assistant', content:fb});
-    msgs.insertAdjacentHTML('beforeend', `<div class="msg ai">${fb}</div>`);
-  }
-  msgs.scrollTop=msgs.scrollHeight;
-  S.chat=chatHist.slice(-60); store.save();
+  if(reply) finish({role:'user',content:'📷 Sent a nutrition label'}, reply, coachMsgHtml(reply));
+  else finish({role:'user',content:'📷 Sent a nutrition label'}, "Couldn't reach coach HQ to read that one — try again in a moment.");
 }
 
 /* =============== onboarding =============== */
