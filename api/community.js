@@ -36,6 +36,7 @@ export default async function handler(req, res) {
         return {
           key: mkey(d.id),
           name: p.name,
+      group: p.group || '',
           streak: st.streak || 0,
           lastActive: d.doc.updated || 0,
           workouts: (st.workouts || []).slice(0, 8).map(w => ({
