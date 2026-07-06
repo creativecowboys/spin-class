@@ -691,6 +691,14 @@ async function loadRemote(){
           personalize(); renderAll(); renderChat();
         }
       }
+      else if(sr && sr.state && (sr.state._adminSchedulePushedAt||0) > (S._adminSchedulePushedAt||0)){
+        // Admin pushed a new schedule — merge just the schedule without wiping the member's active state
+        S.schedule = sr.state.schedule;
+        S._adminSchedulePushedAt = sr.state._adminSchedulePushedAt;
+        try{ localStorage.setItem('forge', JSON.stringify(S)); }catch(e){}
+        renderAll();
+        toast('Schedule updated 📅');
+      }
     }
   }catch(e){}
 }
