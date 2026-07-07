@@ -145,10 +145,11 @@
           <button class="btn small" onclick="pushProgram()">🚀 Push to App</button>
         </div>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 2px 12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 2px 8px;">
         <div class="muted" id="libcount"></div>
         <button class="btn small" onclick="newWorkout()">+ New Workout</button>
       </div>
+      <div class="exchips" id="libfilter" style="margin-bottom:12px;"></div>
       <div id="builder"></div>
     </div>
   </div>
@@ -213,45 +214,60 @@ function awDates(off){
   return Array.from({length:7},(_,i)=>{ const d=new Date(mon); d.setDate(mon.getDate()+i); return d; });
 }
 function isoOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-function progNow(){ return (PB && PB.length===7) ? PB : DEFPROG; }
+function progNow(){ return (PB && PB.length) ? PB : DEFPROG; }
+/* schedule dropdown <option>s filtered to a crew ('' = everyone / no filter), real index preserved */
+function workoutVisibleToCrew(p,crew){ return !crew || !p.group || p.group===crew; }
+function workoutOpts(crew, cur){
+  return progNow().map((p,pi)=>({p,pi})).filter(o=>workoutVisibleToCrew(o.p,crew))
+    .map(({p,pi})=>`<option value="${pi}" ${cur===pi?'selected':''}>Day ${pi+1} — ${esc(p.name)}</option>`).join('');
+}
+function groupWorkoutIndices(crew){ return progNow().map((p,pi)=>({p,pi})).filter(o=>workoutVisibleToCrew(o.p,crew)).map(o=>o.pi); }
+function crewMembers(crew){ return crew ? MEMBERS.filter(m=>((m.state&&m.state.profile&&m.state.profile.group)||'')===crew) : MEMBERS.slice(); }
+function memberCrew(m){ return (m&&m.state&&m.state.profile&&m.state.profile.group)||''; }
 
-/* ---------- team schedule: assign a week of workouts to EVERYONE ---------- */
+/* ---------- crew schedule: assign a week of workouts to a whole crew ---------- */
 let TEAMSCHED = {};
+let teamSchedGroup = '';
 function renderTeamSched(){
   const el=$('teamsched'); if(!el) return;
-  const days=awDates(awOff), PROG=progNow(), t=isoOf(new Date());
+  const days=awDates(awOff), t=isoOf(new Date());
   const label=days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+days[6].toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const crews=knownCrews();
+  const targetN=crewMembers(teamSchedGroup).length;
+  const targetName=teamSchedGroup||'Everyone';
   el.innerHTML = `
-    <div class="sect" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">📅 Team Schedule — push workouts to everyone's calendar
+    <div class="sect" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">📅 Crew Schedule — push a week of workouts to a crew
       <button class="btn ghost small" onclick="awOff--;renderTeamSched();renderMembers()">‹</button>
       <span class="muted">${label}</span>
       <button class="btn ghost small" onclick="awOff++;renderTeamSched();renderMembers()">›</button></div>
+    <div class="exchips" style="margin-bottom:10px;">${[{v:'',n:'Everyone'}].concat(crews.map(c=>({v:c,n:c}))).map(c=>`<div class="exchip${teamSchedGroup===c.v?' on':''}" data-v="${esc(c.v)}" onclick="teamSchedGroup=this.dataset.v;TEAMSCHED={};renderTeamSched()">${esc(c.n)} <b>${crewMembers(c.v).length}</b></div>`).join('')}</div>
     <div class="schedgrid">${days.map(d=>{
       const iso=isoOf(d), cur=TEAMSCHED[iso];
       return `<div class="schedday${iso===t?' today':''}">
         <div class="sd-l">${d.toLocaleDateString('en-US',{weekday:'short'})} ${d.getDate()}${iso===t?' · TODAY':''}</div>
         <select onchange="setTeamSched('${iso}',this.value)">
           <option value="">— rest / none —</option>
-          ${PROG.map((p,pi)=>`<option value="${pi}" ${cur===pi?'selected':''}>Day ${pi+1} — ${esc(p.name)}</option>`).join('')}
+          ${workoutOpts(teamSchedGroup, cur)}
         </select></div>`;
     }).join('')}</div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-      <button class="btn ghost small" onclick="fillTeamSched()">⚡ Fill Mon–Sun (Day 1→)</button>
+      <button class="btn ghost small" onclick="fillTeamSched()">⚡ Fill Mon–Sun</button>
       <button class="btn ghost small" onclick="clearTeamSched()">Clear</button>
-      <button class="btn small" onclick="pushTeamSchedule()">🚀 Push to Everyone (${MEMBERS.length})</button>
+      <button class="btn small" onclick="pushTeamSchedule()">🚀 Push to ${esc(targetName)} (${targetN})</button>
     </div>
-    <p class="muted" style="margin-top:8px;font-size:12px;">Sets these workouts on every member's week — they see them as "today's workout" next time they open the app. Days left as "rest" are left as each member had them.</p>`;
+    <p class="muted" style="margin-top:8px;font-size:12px;">Sets these workouts on every ${esc(targetName)} member's week. ${teamSchedGroup?'Only '+esc(teamSchedGroup)+' workouts are offered.':'All workouts are offered (Everyone spans all crews).'} Days left as "rest" are left as each member had them.</p>`;
 }
 function setTeamSched(iso,v){ if(v==='') delete TEAMSCHED[iso]; else TEAMSCHED[iso]=+v; }
-function fillTeamSched(){ const n=progNow().length; awDates(awOff).forEach((d,idx)=>{ if(idx<n) TEAMSCHED[isoOf(d)]=idx; }); renderTeamSched(); }
+function fillTeamSched(){ const idxs=groupWorkoutIndices(teamSchedGroup); awDates(awOff).forEach((d,k)=>{ if(k<idxs.length) TEAMSCHED[isoOf(d)]=idxs[k]; }); renderTeamSched(); }
 function clearTeamSched(){ TEAMSCHED={}; renderTeamSched(); }
 async function pushTeamSchedule(){
-  if(!MEMBERS.length) return toast('No members yet');
+  const crew=crewMembers(teamSchedGroup);
+  if(!crew.length) return toast('No members in '+(teamSchedGroup||'the app')+' yet');
   const set=Object.keys(TEAMSCHED);
   if(!set.length) return toast('Assign at least one day first');
-  if(!confirm('Push this week\'s workouts to all '+MEMBERS.length+' members?')) return;
+  if(!confirm('Push this week\'s workouts to all '+crew.length+' '+(teamSchedGroup||'')+' members?')) return;
   let ok=0;
-  for(const m of MEMBERS){
+  for(const m of crew){
     try{
       // pull each member's freshest state so we don't clobber their recent activity
       const sr=await fetch('/api/sync?id='+m.id).then(r=>r.ok?r.json():null).catch(()=>null);
@@ -263,15 +279,15 @@ async function pushTeamSchedule(){
       ok++;
     }catch(e){}
   }
-  toast('Pushed to '+ok+'/'+MEMBERS.length+' members 🚀');
+  toast('Pushed to '+ok+'/'+crew.length+' members 🚀');
   loadMembers();
 }
 function schedHtml(i){
   const m=MEMBERS[i]; const sch=(m.state&&m.state.schedule)||{};
-  const days=awDates(awOff); const PROG=progNow();
+  const days=awDates(awOff); const crew=memberCrew(m);
   const t=isoOf(new Date());
   const label=days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+days[6].toLocaleDateString('en-US',{month:'short',day:'numeric'});
-  return `<div class="sect" style="display:flex;align-items:center;gap:8px;">Assign Workouts — ${label}
+  return `<div class="sect" style="display:flex;align-items:center;gap:8px;">Assign Workouts — ${label}${crew?` <span class="muted" style="text-transform:none;letter-spacing:0;">(${esc(crew)} workouts)</span>`:''}
       <button class="btn ghost small" onclick="awOff--;renderMembers()">‹</button>
       <button class="btn ghost small" onclick="awOff++;renderMembers()">›</button></div>
     <div class="schedgrid">${days.map(d=>{
@@ -280,11 +296,11 @@ function schedHtml(i){
         <div class="sd-l">${d.toLocaleDateString('en-US',{weekday:'short'})} ${d.getDate()}${iso===t?' · TODAY':''}</div>
         <select onchange="setSched(${i},'${iso}',this.value)">
           <option value="">— rest / none —</option>
-          ${PROG.map((p,pi)=>`<option value="${pi}" ${cur===pi?'selected':''}>Day ${pi+1} — ${esc(p.name)}</option>`).join('')}
+          ${workoutOpts(crew, cur)}
         </select></div>`;
     }).join('')}</div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-      <button class="btn ghost small" onclick="fillSched(${i})">⚡ Fill Mon–Sun (Day 1→)</button>
+      <button class="btn ghost small" onclick="fillSched(${i})">⚡ Fill Mon–Sun</button>
       <button class="btn small" onclick="saveSched(${i})">🚀 Push Schedule to ${esc(((m.state||{}).profile||{}).name||'member')}</button>
     </div>`;
 }
@@ -293,8 +309,9 @@ function setSched(i, iso, v){
   if(v==='') delete s.schedule[iso]; else s.schedule[iso]=+v;
 }
 function fillSched(i){
-  const s=MEMBERS[i].state; s.schedule=s.schedule||{}; const n=progNow().length;
-  awDates(awOff).forEach((d,idx)=>{ if(idx<n) s.schedule[isoOf(d)]=idx; });
+  const s=MEMBERS[i].state; s.schedule=s.schedule||{};
+  const idxs=groupWorkoutIndices(memberCrew(MEMBERS[i]));
+  awDates(awOff).forEach((d,k)=>{ if(k<idxs.length) s.schedule[isoOf(d)]=idxs[k]; });
   renderMembers();
 }
 async function saveSched(i){
@@ -423,17 +440,40 @@ async function loadProgram(){
 }
 function loadDefaultProgram(){ PB=JSON.parse(JSON.stringify(DEFPROG)); pbOpen=new WeakSet(); renderBuilder(); toast('Loaded PPL default into editor'); }
 let pbOpen = new WeakSet(); // which workout cards are expanded (keyed by the object, survives add/delete)
+let pbFilter = ''; // '' = all crews; otherwise a crew name to filter the library by
+/* crews that actually exist — from members' groups and workout tags */
+function knownCrews(){
+  const s=new Set();
+  (MEMBERS||[]).forEach(m=>{ const g=m.state&&m.state.profile&&m.state.profile.group; if(g) s.add(g); });
+  (PB||[]).forEach(d=>{ if(d.group) s.add(d.group); });
+  return [...s].sort();
+}
+/* a library workout is visible to a crew if untagged (all) or tagged to it */
+function workoutVisibleTo(d,crew){ return !d.group || d.group===crew; }
+function wCrewLabel(d){ return d && d.group ? d.group : 'All crews'; }
+function renderLibFilter(){
+  const chips=[{v:'',n:'All'}].concat(knownCrews().map(c=>({v:c,n:c})));
+  $('libfilter').innerHTML = chips.map(c=>{
+    const n = c.v==='' ? PB.length : PB.filter(d=>workoutVisibleTo(d,c.v)).length;
+    return `<div class="exchip${pbFilter===c.v?' on':''}" onclick="pbFilter=this.dataset.v;renderBuilder()" data-v="${esc(c.v)}">${esc(c.n)} <b>${n}</b></div>`;
+  }).join('');
+}
 function renderBuilder(){
-  $('libcount').textContent = PB.length + ' workout' + (PB.length===1?'':'s') + ' in the library';
-  $('builder').innerHTML = PB.map((d,di)=>{
+  renderLibFilter();
+  const shown = PB.map((d,di)=>({d,di})).filter(o=>!pbFilter||workoutVisibleTo(o.d,pbFilter));
+  $('libcount').textContent = pbFilter
+    ? shown.length + ' shown for ' + pbFilter
+    : PB.length + ' workout' + (PB.length===1?'':'s') + ' in the library';
+  $('builder').innerHTML = shown.map(({d,di})=>{
     const open = pbOpen.has(d);
     const meta = [d.sub, (d.ex||[]).length + ' exercise' + ((d.ex||[]).length===1?'':'s')].filter(Boolean).join(' · ');
     return `
-    <div class="wcard${open?' open':''}">
+    <div class="wcard${open?' open':''}" data-di="${di}">
       <div class="wcard-h" onclick="toggleWorkout(${di})">
         <div class="wcard-num">${di+1}</div>
         <div class="wcard-t"><b>${esc(d.name||'Untitled workout')}</b><small>${esc(meta)}</small></div>
         <div class="wcard-acts">
+          <span class="pill" style="border-color:var(--accent3);color:var(--accent3);margin:0;">${esc(wCrewLabel(d))}</span>
           <button class="btn ghost small" onclick="event.stopPropagation();dupWorkout(${di})">Duplicate</button>
           <button class="icobtn" title="Delete workout" onclick="event.stopPropagation();delWorkout(${di})">🗑</button>
           <span class="wcard-chev">▶</span>
@@ -444,6 +484,7 @@ function renderBuilder(){
           <div class="field"><label>Workout name</label><input value="${esc(d.name)}" onchange="PB[${di}].name=this.value;refreshCardHead(${di})"></div>
           <div class="field" style="flex:2;"><label>Subtitle</label><input value="${esc(d.sub||'')}" onchange="PB[${di}].sub=this.value;refreshCardHead(${di})"></div>
           <div class="field"><label>Big lift (or blank)</label><input value="${esc(d.big||'')}" onchange="PB[${di}].big=this.value||null"></div>
+          <div class="field"><label>Crew (blank = all)</label><input list="grp-list" value="${esc(d.group||'')}" placeholder="All crews" onchange="PB[${di}].group=this.value.trim();renderBuilder()"></div>
         </div>
         ${d.ex.map((e,ei)=>`
           <div class="exline">
@@ -467,7 +508,7 @@ function renderBuilder(){
 function refreshCardHead(di){
   // update the collapsed header text live without re-rendering (keeps input focus)
   const d=PB[di]; if(!d) return;
-  const card=$('builder').children[di]; if(!card) return;
+  const card=$('builder').querySelector('.wcard[data-di="'+di+'"]'); if(!card) return;
   const t=card.querySelector('.wcard-t');
   if(t){ const meta=[d.sub,(d.ex||[]).length+' exercise'+((d.ex||[]).length===1?'':'s')].filter(Boolean).join(' · ');
     t.querySelector('b').textContent=d.name||'Untitled workout';
@@ -475,7 +516,7 @@ function refreshCardHead(di){
 }
 function toggleWorkout(di){ const d=PB[di]; if(!d) return; if(pbOpen.has(d)) pbOpen.delete(d); else pbOpen.add(d); renderBuilder(); }
 function newWorkout(){
-  const w={name:'New Workout',sub:'',big:null,ex:[]};
+  const w={name:'New Workout',sub:'',big:null,group:pbFilter||'',ex:[]};
   PB.push(w); pbOpen.add(w); renderBuilder();
   const el=$('builder').lastElementChild; if(el) el.scrollIntoView({behavior:'smooth',block:'center'});
   toast('Blank workout added — build it out');

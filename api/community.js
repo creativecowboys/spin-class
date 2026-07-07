@@ -4,6 +4,12 @@ import { createHash } from 'node:crypto';
 // public member key — never expose device ids (they are the account secret)
 const mkey = id => createHash('sha256').update('spin-' + id).digest('hex').slice(0, 12);
 
+// crews are the free-text profile.group. Chat is separate per crew; ungrouped
+// members share the legacy team chat.
+const groupOf = state => String((state && state.profile && state.profile.group) || '').trim();
+const groupSlug = g => String(g || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+const chatPath = group => { const s = groupSlug(group); return s ? `config/teamchat-${s}.json` : 'config/teamchat.json'; };
+
 async function readBlob(prefix) {
   const { blobs } = await list({ prefix });
   if (!blobs.length) return null;
@@ -25,9 +31,11 @@ export default async function handler(req, res) {
           return { id: b.pathname.replace(/^users\//, '').replace(/\.json$/, ''), doc: await r.json() };
         } catch (e) { return null; }
       }))).filter(Boolean);
-      // feed is team-only: caller must be an existing member
-      if (!docs.some(d => d.id === id)) return res.status(403).json({ error: 'unknown member' });
-      const chat = (await readBlob('config/teamchat.json')) || [];
+      // feed is crew-only: caller must be an existing member; chat is scoped to their crew
+      const meDoc = docs.find(d => d.id === id);
+      if (!meDoc) return res.status(403).json({ error: 'unknown member' });
+      const myGroup = groupOf(meDoc.doc.state);
+      const chat = (await readBlob(chatPath(myGroup))) || [];
       const members = docs.map(d => {
         const st = d.doc.state || {};
         const p = st.profile;
@@ -54,7 +62,8 @@ export default async function handler(req, res) {
       const me = await readBlob(`users/${clean}.json`);
       if (!me || !me.state || !me.state.profile) return res.status(403).json({ error: 'unknown member' });
       const myKey = mkey(clean);
-      const chat = (await readBlob('config/teamchat.json')) || [];
+      const myGroup = groupOf(me.state);
+      const chat = (await readBlob(chatPath(myGroup))) || [];
       if (delAt) {
         // members can delete only their own messages
         const i = chat.findIndex(m => m.at === delAt && m.k === myKey);
@@ -65,7 +74,7 @@ export default async function handler(req, res) {
         chat.push({ k: myKey, n: me.state.profile.name || 'Someone', t: msg, at: Date.now() });
         while (chat.length > 100) chat.shift();
       }
-      await put('config/teamchat.json', JSON.stringify(chat), {
+      await put(chatPath(myGroup), JSON.stringify(chat), {
         access: 'public', addRandomSuffix: false, allowOverwrite: true,
         contentType: 'application/json', cacheControlMaxAge: 0
       });

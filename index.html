@@ -1190,6 +1190,8 @@ function workoutFor(ref){
 }
 /* a workout counts as a rest day by name (no longer a hardcoded index) */
 function isRestDay(p){ return !!(p && /rest/i.test(p.name||'')); }
+/* a library workout is visible to a member if it's untagged (all crews) or tagged to their crew */
+function workoutVisible(p){ const g = p && p.group; return !g || g === (S.profile && S.profile.group); }
 function newCustomId(){ return 'w'+Array.from(crypto.getRandomValues(new Uint8Array(6)),b=>b.toString(16).padStart(2,'0')).join(''); }
 
 /* =============== week calendar =============== */
@@ -1237,7 +1239,7 @@ function openDayAssign(iso){
   }).join('');
   $('sheet').innerHTML = `<h3>${d.toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'})}</h3>
     <div class="exlist">` +
-    PROGRAM.map((p,i)=>`<div class="exrow" onclick="assignDay('${iso}',${i})"><div><b>Day ${i+1} — ${esc(p.name)}</b><small>${esc(p.sub)}</small></div><div class="go">${cur===i?'✓':'+'}</div></div>`).join('') +
+    PROGRAM.map((p,i)=>({p,i})).filter(o=>workoutVisible(o.p)).map(({p,i})=>`<div class="exrow" onclick="assignDay('${iso}',${i})"><div><b>Day ${i+1} — ${esc(p.name)}</b><small>${esc(p.sub)}</small></div><div class="go">${cur===i?'✓':'+'}</div></div>`).join('') +
     customRows +
     `</div>
     <button class="btn ghost" style="margin-top:10px;" onclick="openBuilder('${iso}')">+ Build a Workout</button>
@@ -1358,7 +1360,7 @@ function renderProgram(){
   const ref = S.schedule && S.schedule[todayISO()];
   const cur = (typeof ref==='number') ? ref : -1;
   if(openDay===null) openDay = cur;
-  $('program').innerHTML = PROGRAM.map((p,i)=>{
+  $('program').innerHTML = PROGRAM.map((p,i)=>({p,i})).filter(o=>workoutVisible(o.p)).map(({p,i})=>{
     const today = i===cur;
     const rows = p.ex.map(e=>`<div class="ex"><div class="xn${e[3]?' big':''}">${e[0]}</div><div class="xs">${e[1]}</div><div class="xr">${e[2]}</div></div>`).join('');
     const logBtn = isRestDay(p)
