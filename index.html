@@ -759,9 +759,7 @@ async function loadRemote(){
       const sr = await fetch('/api/sync?id='+S.id).then(r=>r.ok?r.json():null).catch(()=>null);
       if(sr && sr.state && (sr.updated||0) > (S.updatedAt||0)+2000){
         const keepActive = S.active; // never lose an in-progress workout when new data (e.g. an admin schedule push) arrives
-        const keepChat = S.chat || []; // and never let a sync shrink the coach conversation
-        S = sr.state;
-        if(keepChat.length > (S.chat||[]).length) S.chat = keepChat;
+        S = sr.state; // coach chat is NOT in S anymore (see loadCoachChat) — a state pull can't touch it
         if(keepActive){ S.active = keepActive; store.save(); } // updated data lands; the live workout stays put and shows when they finish
         else {
           if([scrubSeed(), migrateWeights(), stripDayNames()].some(Boolean)) store.save();
@@ -2335,12 +2333,36 @@ function logCoachMeal(payload){
   $('f-carb').value=m.carb||''; $('f-fat').value=m.fat||''; $('f-mdate').value=todayISO();
 }
 function renderChat(){
-  chatHist = (S.chat || []).slice();
-  if(!chatHist.length) return;
-  const msgs = $('msgs');
+  const msgs = $('msgs'); if(!msgs) return;
   msgs.innerHTML = $('chat-greet').outerHTML +
     chatHist.map(m=> m.role==='user' ? `<div class="msg user">${esc(m.content)}</div>` : coachMsgHtml(m.content)).join('');
   msgs.scrollTop = msgs.scrollHeight;
+}
+/* Coach chat lives server-side per device-id (api/coachchat), NOT in the synced
+   S blob — so a stale device / evicted localStorage can't wipe the conversation.
+   A local cache gives instant + offline display. */
+function cacheCoachChat(){ try{ localStorage.setItem('coachchat', JSON.stringify(chatHist.slice(-60))); }catch(e){} }
+function saveCoachChat(){
+  if(!S || !S.id) return;
+  chatHist = chatHist.slice(-60);
+  cacheCoachChat();
+  fetch('/api/coachchat', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({id:S.id, messages:chatHist})}).catch(()=>{});
+}
+async function loadCoachChat(){
+  if(!S || !S.id) return;
+  // show the local cache instantly (survives reloads / offline)
+  try{ const c=JSON.parse(localStorage.getItem('coachchat')); if(Array.isArray(c) && c.length>chatHist.length){ chatHist=c; renderChat(); } }catch(e){}
+  try{
+    const r = await fetch('/api/coachchat?id='+S.id);
+    if(!r.ok) return;
+    const server = (await r.json()).messages || [];
+    if(server.length){
+      if(server.length >= chatHist.length){ chatHist = server; renderChat(); cacheCoachChat(); }
+    } else if((S.chat||[]).length){
+      chatHist = S.chat.slice(-60); renderChat(); saveCoachChat(); // one-time migration off the legacy S.chat
+    }
+  }catch(e){}
 }
 function buildContext(){
   const {cal,pro,carb,fat} = totals(); const p = P();
@@ -2395,8 +2417,7 @@ async function send(){
     msgs.insertAdjacentHTML('beforeend', `<div class="msg ai">${fb}</div>`);
   }
   msgs.scrollTop=msgs.scrollHeight;
-  S.chat = chatHist.slice(-60);
-  store.save(); syncNow();
+  saveCoachChat();
 }
 
 /* scan a nutrition label → coach reads it (vision) → "+ Log" button via LOG_MEAL tag */
@@ -2420,7 +2441,7 @@ async function sendCoachImage(file){
   try{ dataUrl=await compressImage(file, 1100, 0.82); }catch(e){ dataUrl=null; }
   if(!dataUrl){ try{ dataUrl=await fileToDataUrl(file); }catch(e){ dataUrl=null; } }
   const m = dataUrl && /^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,([^]+)$/i.exec(dataUrl);
-  const finish=(who,txt,html)=>{ $('typing').classList.remove('on'); if(who) chatHist.push(who); chatHist.push({role:'assistant',content:txt}); msgs.insertAdjacentHTML('beforeend', html||`<div class="msg ai">${esc(txt)}</div>`); msgs.scrollTop=msgs.scrollHeight; S.chat=chatHist.slice(-60); store.save(); syncNow(); };
+  const finish=(who,txt,html)=>{ $('typing').classList.remove('on'); if(who) chatHist.push(who); chatHist.push({role:'assistant',content:txt}); msgs.insertAdjacentHTML('beforeend', html||`<div class="msg ai">${esc(txt)}</div>`); msgs.scrollTop=msgs.scrollHeight; saveCoachChat(); };
   if(!m){
     return finish({role:'user',content:'📷 Sent a photo'}, "I couldn't read that photo — snap a clearer, well-lit, straight-on shot of the label (a JPG or PNG works best) and try again.");
   }
@@ -2513,7 +2534,9 @@ async function adoptAccount(id){
   S.id = id;
   scrubSeed(); migrateWeights(); stripDayNames();
   store.save();
-  personalize(); renderAll(); renderChat(); loadCommunity();
+  // switching identity: drop any cached chat from a previous account, then load this one's
+  chatHist=[]; try{ localStorage.removeItem('coachchat'); }catch(e){}
+  personalize(); renderAll(); renderChat(); loadCoachChat(); loadCommunity();
   $('onboard').classList.remove('open');
   toast('Welcome back, '+P().name+'!');
   if(!S.pin) setTimeout(()=>{ openModal('profile'); toast('Lock it in — set a 4-digit PIN 🔐'); }, 1500);
@@ -2546,8 +2569,9 @@ async function finishOnboard(toCoach){
   };
   S.pin = $('ob-pin').value.replace(/\D/g,'');
   S.id = randId();
+  chatHist=[]; try{ localStorage.removeItem('coachchat'); }catch(e){} // fresh account starts with a clean coach thread
   store.save();
-  personalize(); renderAll();
+  personalize(); renderAll(); renderChat();
   setTimeout(loadCommunity, 2600); // first sync must land server-side before the feed will know us
   $('onboard').classList.remove('open');
   toast('Welcome to SPIN CLASS, '+name+'! 🎉');
@@ -2567,6 +2591,7 @@ personalize();
 renderAll();
 renderChat();
 if(needsOnboard) $('onboard').classList.add('open');
+if(S && S.id && S.profile) loadCoachChat();
 loadRemote().then(()=>{ if(S && S.id && S.profile) schedSync(); loadCommunity(); });
 // re-pull on return to foreground so admin pushes (schedules/program) show up without a cold reopen
 let lastPull=Date.now();
