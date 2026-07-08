@@ -30,6 +30,11 @@
   .field{margin-bottom:12px;}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
   .row .field{flex:1;min-width:120px;margin-bottom:0;}
+  /* admin member profile-edit form: even, aligned columns instead of stretchy flex */
+  .medit{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;align-items:end;}
+  .medit .field{margin-bottom:0;min-width:0;}
+  .medit input,.medit select{width:100%;}
+  .medit-actions{display:flex;gap:8px;margin-top:12px;}
   .muted{color:var(--muted);font-size:12.5px;}
   .mhead{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;}
   .mhead .nm{font-size:16px;font-weight:900;}
@@ -367,7 +372,7 @@ function renderMembers(){
       </div>
       <div class="mbody${openM.has(i)?' open':''}" id="mb-${i}">
         <div class="sect">Profile (admin edit)</div>
-        <div class="row">
+        <div class="medit">
           <div class="field"><label>Name</label><input id="pn-${i}" value="${esc(p.name||'')}"></div>
           <div class="field"><label>Group</label><input id="pgr-${i}" value="${esc(grp)}" list="grp-list" placeholder="e.g. Ryze Guys"></div>
           <div class="field"><label>Cal target</label><input id="pc-${i}" type="number" value="${p.calTarget||2400}"></div>
@@ -376,6 +381,8 @@ function renderMembers(){
           <div class="field"><label>Water goal (oz)</label><input id="pwg-${i}" type="number" value="${p.waterGoal||64}"></div>
           <div class="field"><label>Streak</label><input id="ps-${i}" type="number" value="${s.streak||0}"></div>
           <div class="field"><label>PIN (blank = none)</label><input id="pw-${i}" maxlength="4" value="${esc(String(s.pin||''))}"></div>
+        </div>
+        <div class="medit-actions">
           <button class="btn small" onclick="saveMember(${i})">Save</button>
           <button class="btn danger small" onclick="delMember(${i})">Delete</button>
         </div>
