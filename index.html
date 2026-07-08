@@ -580,7 +580,7 @@
         </div>
         <div class="typing" id="typing">Coach is typing…</div>
         <div class="chips">
-          <div class="chip" onclick="ask('Based on my goal, current weight, and training, recommend the daily calorie and macro targets I should set — then give me numbers I can apply.')">Dial in my targets</div>
+          <div class="chip" onclick="ask('Based on my goal, height, current weight, and training, recommend the daily calories, protein, carbs, fat, and water I should set — then give me numbers I can apply.')">Dial in my targets</div>
           <div class="chip" onclick="ask('How am I doing today?')">How am I doing today?</div>
           <div class="chip" onclick="ask('What should I eat for dinner?')">Dinner ideas</div>
           <div class="chip" onclick="ask('Plan tomorrow\'s workout')">Tomorrow's workout</div>
@@ -1977,6 +1977,10 @@ function openModal(kind, arg){
     sheet.innerHTML = `
     <h3>Your Profile</h3>
     <div class="field"><label>Name</label><input id="f-pname" value="${esc(p.name)}"></div>
+    <div class="fieldrow">
+      <div class="field"><label>Height (ft)</label><input id="f-pht-ft" type="number" inputmode="numeric" value="${p.heightIn?Math.floor(p.heightIn/12):''}" placeholder="5"></div>
+      <div class="field"><label>Height (in)</label><input id="f-pht-in" type="number" inputmode="numeric" value="${p.heightIn?(p.heightIn%12):''}" placeholder="11"></div>
+    </div>
     <div class="field"><label>Your goal</label>
       <div class="seg" id="goal-seg">
         <button type="button" class="${goalSel==='cut'?'on':''}" data-g="cut" onclick="setGoalSel('cut')">Cut</button>
@@ -1984,7 +1988,8 @@ function openModal(kind, arg){
         <button type="button" class="${goalSel==='bulk'?'on':''}" data-g="bulk" onclick="setGoalSel('bulk')">Bulk</button>
       </div>
     </div>
-    <p class="tagline" style="margin:-4px 0 10px;">Not sure what numbers to set? Tap "Dial in my targets" in the Coach and it'll recommend targets you can apply here in one tap.</p>
+    <button class="btn ghost" style="margin:2px 0 4px;color:var(--accent3);border-color:var(--accent3);" onclick="coachSetTargets()">🎯 Let the coach set my macros + water for this goal</button>
+    <p class="tagline" style="margin:2px 0 12px;" id="goal-hint">Your goal drives your numbers — cut, maintain, and bulk each get different targets. Tap above and the coach fills in the fields below in one tap.</p>
     <div class="fieldrow">
       <div class="field"><label>Calories / day</label><input id="f-pcal" type="number" value="${p.calTarget}"></div>
       <div class="field"><label>Protein (g) / day</label><input id="f-ppro" type="number" value="${p.proTarget}"></div>
@@ -2078,23 +2083,34 @@ let goalSel = 'maintain';
 function setGoalSel(g){
   goalSel = g;
   document.querySelectorAll('#goal-seg button').forEach(b=>b.classList.toggle('on', b.dataset.g===g));
+  const hint=$('goal-hint'); if(hint) hint.textContent = 'Goal set to '+((GOAL_LABEL[g]||g))+'. Tap "Let the coach set my macros" above to update your targets for it.';
 }
 const GOAL_LABEL = {cut:'Cutting', maintain:'Maintaining', bulk:'Bulking'};
-function saveProfile(){
+function saveProfile(silent){
   const name=$('f-pname').value.trim();
-  if(!name) return toast('Name required');
+  if(!name){ toast('Name required'); return false; }
+  const pin = $('f-ppin').value.replace(/\D/g,'');
+  if(pin && pin.length!==4){ toast('PIN must be 4 digits'); return false; }
   S.profile.name = name;
   S.profile.goal = goalSel;
+  const ft=+$('f-pht-ft').value||0, inch=+$('f-pht-in').value||0;
+  S.profile.heightIn = (ft||inch) ? (ft*12+inch) : (S.profile.heightIn||null);
   S.profile.calTarget = +$('f-pcal').value || 2400;
   S.profile.proTarget = +$('f-ppro').value || 180;
   S.profile.carbTarget = +$('f-pcarb').value || 250;
   S.profile.fatTarget = +$('f-pfat').value || 70;
   S.profile.goalWeight = +$('f-pgw').value || null;
   S.profile.waterGoal = +$('f-pwg').value || 64;
-  const pin = $('f-ppin').value.replace(/\D/g,'');
-  if(pin && pin.length!==4) return toast('PIN must be 4 digits');
   if(pin) S.pin = pin;
-  store.save(); personalize(); closeModal(); renderAll(); toast('Profile updated ✓');
+  store.save(); personalize();
+  if(!silent){ closeModal(); renderAll(); toast('Profile updated ✓'); }
+  return true;
+}
+/* save what's entered, then hand off to the coach to recommend goal-based targets */
+function coachSetTargets(){
+  if(!saveProfile(true)) return;
+  closeModal(); renderAll(); go('coach');
+  setTimeout(()=>ask('My goal is to '+goalSel+'. Using my height, current weight, and training, recommend the daily calories, protein, carbs, fat, and water I should target — then give me numbers I can apply.'), 60);
 }
 let compoundDays = [];
 function renderDayPick(){
@@ -2179,9 +2195,9 @@ function coachMsgHtml(rawText){
   }).join('');
   html += targets.map(t=>{
     const cal=+t.cal||+t.calories||0, pro=+(t.protein!=null?t.protein:t.pro)||0,
-          carb=+(t.carbs!=null?t.carbs:t.carb)||0, fat=+t.fat||0;
-    const payload=encodeURIComponent(JSON.stringify({cal, pro, carb, fat}));
-    return `<button class="logmeal" onclick="applyCoachTargets('${payload}')">✓ Set my targets · ${cal} kcal · ${pro}P · ${carb}C · ${fat}F</button>`;
+          carb=+(t.carbs!=null?t.carbs:t.carb)||0, fat=+t.fat||0, water=+(t.water!=null?t.water:t.waterGoal)||0;
+    const payload=encodeURIComponent(JSON.stringify({cal, pro, carb, fat, water}));
+    return `<button class="logmeal" onclick="applyCoachTargets('${payload}')">✓ Set my targets · ${cal} kcal · ${pro}P · ${carb}C · ${fat}F${water?` · ${water} oz water`:''}</button>`;
   }).join('');
   return html;
 }
@@ -2192,6 +2208,7 @@ function applyCoachTargets(payload){
   if(t.pro) S.profile.proTarget=t.pro;
   if(t.carb) S.profile.carbTarget=t.carb;
   if(t.fat) S.profile.fatTarget=t.fat;
+  if(t.water) S.profile.waterGoal=t.water;
   store.save(); renderAll(); toast('Targets updated ✓ — see your dashboard');
 }
 function logCoachMeal(payload){
@@ -2214,7 +2231,8 @@ function buildContext(){
   return JSON.stringify({
     name: p.name,
     goal: p.goal || 'not set (ask them if it matters)',
-    calorieTarget: p.calTarget, proteinTarget: p.proTarget, carbTarget: carbTarget(), fatTarget: fatTarget(),
+    heightInches: p.heightIn || null, height: p.heightIn ? (Math.floor(p.heightIn/12)+"'"+(p.heightIn%12)+'"') : 'not set (ask if you need it for targets)',
+    calorieTarget: p.calTarget, proteinTarget: p.proTarget, carbTarget: carbTarget(), fatTarget: fatTarget(), waterGoalOz: p.waterGoal || 64,
     todayCalories: cal, todayProtein: pro, todayCarbs: carb, todayFat: fat,
     mealsToday: mealsToday().map(m=>`${m.name} (${m.cal} kcal, ${m.pro}g protein, ${m.carb||0}g carbs, ${m.fat||0}g fat, ${m.time})`),
     currentWeightLbs: S.weights.length ? S.weights[S.weights.length-1].w : null, goalWeightLbs: p.goalWeight,
