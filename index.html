@@ -654,12 +654,19 @@
 
     <div class="ob-step" id="ob-1">
       <div class="ob-kicker">Step 2 of 4</div>
-      <div class="ob-title">Where are you,<br>and where are<br>you <em>headed?</em></div>
-      <div class="ob-sub">Your weight trend starts here. Only you (and your coach) see it.</div>
+      <div class="ob-title">A few <em>quick stats.</em></div>
+      <div class="ob-sub">This lets your coach calculate targets that actually fit you — not generic defaults.</div>
       <div class="ob-body">
+        <div class="field"><label>Sex (for calorie math)</label>
+          <div class="seg" id="ob-sex-seg">
+            <button type="button" class="on" data-s="male" onclick="obSetSex('male')">Male</button>
+            <button type="button" data-s="female" onclick="obSetSex('female')">Female</button>
+          </div>
+        </div>
         <div class="fieldrow">
-          <div class="field"><label>Current weight (lbs)</label><input id="ob-w" type="number" step="0.1" placeholder="210"></div>
-          <div class="field"><label>Goal weight (lbs)</label><input id="ob-gw" type="number" step="0.1" placeholder="195"></div>
+          <div class="field"><label>Age</label><input id="ob-age" type="number" inputmode="numeric" placeholder="32"></div>
+          <div class="field"><label>Height (ft)</label><input id="ob-ht-ft" type="number" inputmode="numeric" placeholder="5"></div>
+          <div class="field"><label>Height (in)</label><input id="ob-ht-in" type="number" inputmode="numeric" placeholder="11"></div>
         </div>
       </div>
       <div class="ob-dots"><i></i><i class="on"></i><i></i><i></i></div>
@@ -668,25 +675,42 @@
 
     <div class="ob-step" id="ob-2">
       <div class="ob-kicker">Step 3 of 4</div>
-      <div class="ob-title">Set your<br><em>daily targets.</em></div>
-      <div class="ob-sub">Not sure? These defaults are a solid starting point — your coach can help you dial them in later.</div>
+      <div class="ob-title">Where you are,<br>where you're <em>headed.</em></div>
+      <div class="ob-sub">Only you and your coach see this.</div>
       <div class="ob-body">
         <div class="fieldrow">
-          <div class="field"><label>Calories / day</label><input id="ob-cal" type="number" value="2400"></div>
-          <div class="field"><label>Protein (g) / day</label><input id="ob-pro" type="number" value="180"></div>
+          <div class="field"><label>Current weight (lbs)</label><input id="ob-w" type="number" step="0.1" placeholder="210"></div>
+          <div class="field"><label>Goal weight (lbs)</label><input id="ob-gw" type="number" step="0.1" placeholder="195"></div>
+        </div>
+        <div class="field"><label>Your goal</label>
+          <div class="seg" id="ob-goal-seg">
+            <button type="button" data-g="cut" onclick="obSetGoal('cut')">Cut</button>
+            <button type="button" class="on" data-g="maintain" onclick="obSetGoal('maintain')">Maintain</button>
+            <button type="button" data-g="bulk" onclick="obSetGoal('bulk')">Bulk</button>
+          </div>
+        </div>
+        <div class="field"><label>How active are you overall?</label>
+          <select id="ob-activity">
+            <option value="sedentary">Mostly sitting (desk job)</option>
+            <option value="light">Lightly active</option>
+            <option value="moderate" selected>Moderately active + training</option>
+            <option value="active">Very active / hard training</option>
+            <option value="athlete">Athlete / physical job</option>
+          </select>
         </div>
       </div>
       <div class="ob-dots"><i></i><i></i><i class="on"></i><i></i></div>
-      <button class="btn" onclick="obNext(2)">Next</button>
+      <button class="btn" onclick="obNext(2)">See my plan</button>
     </div>
 
     <div class="ob-step" id="ob-3">
       <div class="ob-kicker">Step 4 of 4</div>
-      <div class="ob-title">You're in,<br><em id="ob-final-name">champ.</em></div>
-      <div class="ob-sub">Targets set, first weigh-in logged. Time to put in the work.</div>
-      <div class="ob-body"></div>
+      <div class="ob-title">Your <em id="ob-final-name">plan,</em> ready.</div>
+      <div class="ob-sub">Calculated from your stats — a solid starting point you can adjust anytime, or have the coach fine-tune.</div>
+      <div class="ob-body" id="ob-plan-body"></div>
       <div class="ob-dots"><i></i><i></i><i></i><i class="on"></i></div>
-      <button class="btn" onclick="finishOnboard()">Let's Train</button>
+      <button class="btn" onclick="finishOnboard()">Start with this plan</button>
+      <button class="btn ghost" style="margin-top:8px;" onclick="finishOnboard(true)">Have the coach fine-tune it</button>
     </div>
   </div>
 </div>
@@ -864,6 +888,42 @@ if([scrubSeed(), migrateWeights(), stripDayNames()].some(Boolean)) try{ localSto
 const P = () => S.profile || {name:'Dave', calTarget:2400, proTarget:180, carbTarget:250, fatTarget:70, waterGoal:64, goalWeight:null};
 function carbTarget(){ return (S.profile && S.profile.carbTarget) || 250; }
 function fatTarget(){ return (S.profile && S.profile.fatTarget) || 70; }
+
+/* ---- deterministic macro + water calculator (Mifflin–St Jeor → TDEE → goal) ----
+   The numbers come from here so they're reliable & consistent; the coach layers
+   on judgment (explaining, adjusting for edge cases, ongoing check-ins). */
+const ACTIVITY = {
+  sedentary:{mult:1.2,   label:'Mostly sitting (desk job)'},
+  light:    {mult:1.375, label:'Lightly active'},
+  moderate: {mult:1.55,  label:'Moderately active + training'},
+  active:   {mult:1.725, label:'Very active / hard training'},
+  athlete:  {mult:1.9,   label:'Athlete / physical job'}
+};
+function computeTargets(o){
+  const weightLbs = +o.weightLbs || 190;
+  const age = +o.age || 30;
+  const heightIn = +o.heightIn || 69;
+  const sex = o.sex==='female' ? 'female' : 'male';
+  const goal = (o.goal==='cut'||o.goal==='bulk') ? o.goal : 'maintain';
+  const kg = weightLbs/2.2046226, cm = heightIn*2.54;
+  const bmr = 10*kg + 6.25*cm - 5*age + (sex==='female' ? -161 : 5);
+  const tdee = bmr * (ACTIVITY[o.activity] || ACTIVITY.moderate).mult;
+  const factor = goal==='cut' ? 0.80 : goal==='bulk' ? 1.12 : 1.0;
+  let cal = Math.round(tdee*factor/10)*10;
+  cal = Math.max(sex==='female'?1200:1500, cal); // safety floor — no crash diets
+  const ppl = goal==='cut' ? 1.0 : goal==='bulk' ? 0.85 : 0.9; // protein g/lb
+  const protein = Math.round(weightLbs*ppl);
+  const fat = Math.round(weightLbs*0.35);
+  const carbs = Math.max(0, Math.round((cal - protein*4 - fat*9)/4));
+  const water = Math.max(64, Math.round(weightLbs*0.6/8)*8);
+  return {cal, protein, carbs, fat, water, maintenance:Math.round(tdee)};
+}
+/* pull the calculator inputs off S.profile (+ latest weight) */
+function targetInputs(){
+  const p = P();
+  const w = (S.weights && S.weights.length) ? S.weights[S.weights.length-1].w : null;
+  return {sex:p.sex, age:p.age, heightIn:p.heightIn, weightLbs:w, activity:p.activity, goal:p.goal};
+}
 
 /* =============== helpers =============== */
 const $ = id => document.getElementById(id);
@@ -1974,12 +2034,23 @@ function openModal(kind, arg){
   if(kind==='profile'){
     const p = P();
     goalSel = p.goal || 'maintain';
+    sexSel = p.sex || 'male';
     sheet.innerHTML = `
     <h3>Your Profile</h3>
     <div class="field"><label>Name</label><input id="f-pname" value="${esc(p.name)}"></div>
+    <div class="field"><label>Sex (for calorie math)</label>
+      <div class="seg" id="sex-seg">
+        <button type="button" class="${sexSel==='male'?'on':''}" data-s="male" onclick="setSexSel('male')">Male</button>
+        <button type="button" class="${sexSel==='female'?'on':''}" data-s="female" onclick="setSexSel('female')">Female</button>
+      </div>
+    </div>
     <div class="fieldrow">
+      <div class="field"><label>Age</label><input id="f-page" type="number" inputmode="numeric" value="${p.age||''}" placeholder="32"></div>
       <div class="field"><label>Height (ft)</label><input id="f-pht-ft" type="number" inputmode="numeric" value="${p.heightIn?Math.floor(p.heightIn/12):''}" placeholder="5"></div>
       <div class="field"><label>Height (in)</label><input id="f-pht-in" type="number" inputmode="numeric" value="${p.heightIn?(p.heightIn%12):''}" placeholder="11"></div>
+    </div>
+    <div class="field"><label>How active are you overall?</label>
+      <select id="f-pactivity">${Object.entries(ACTIVITY).map(([k,v])=>`<option value="${k}" ${((p.activity||'moderate')===k)?'selected':''}>${v.label}</option>`).join('')}</select>
     </div>
     <div class="field"><label>Your goal</label>
       <div class="seg" id="goal-seg">
@@ -1988,8 +2059,8 @@ function openModal(kind, arg){
         <button type="button" class="${goalSel==='bulk'?'on':''}" data-g="bulk" onclick="setGoalSel('bulk')">Bulk</button>
       </div>
     </div>
-    <button class="btn ghost" style="margin:2px 0 4px;color:var(--accent3);border-color:var(--accent3);" onclick="coachSetTargets()">Let the coach set my macros + water for this goal</button>
-    <p class="tagline" style="margin:2px 0 12px;" id="goal-hint">Your goal drives your numbers — cut, maintain, and bulk each get different targets. Tap above and the coach fills in the fields below in one tap.</p>
+    <button class="btn ghost" style="margin:2px 0 4px;color:var(--accent3);border-color:var(--accent3);" onclick="calcProfileTargets()">Calculate my targets from my stats</button>
+    <p class="tagline" style="margin:2px 0 12px;" id="goal-hint">Fills the numbers below from your height, weight, age, and goal — each goal gives different targets. Review, then Save. Want it dialed in further? Ask the coach in the Coach tab.</p>
     <div class="fieldrow">
       <div class="field"><label>Calories / day</label><input id="f-pcal" type="number" value="${p.calTarget}"></div>
       <div class="field"><label>Protein (g) / day</label><input id="f-ppro" type="number" value="${p.proTarget}"></div>
@@ -2079,13 +2150,29 @@ function deleteWeight(index){
   S.weights.splice(index,1);
   store.save(); closeModal(); renderAll(); toast('Weigh-in deleted');
 }
-let goalSel = 'maintain';
+let goalSel = 'maintain', sexSel = 'male';
 function setGoalSel(g){
   goalSel = g;
   document.querySelectorAll('#goal-seg button').forEach(b=>b.classList.toggle('on', b.dataset.g===g));
-  const hint=$('goal-hint'); if(hint) hint.textContent = 'Goal set to '+((GOAL_LABEL[g]||g))+'. Tap "Let the coach set my macros" above to update your targets for it.';
+  const hint=$('goal-hint'); if(hint) hint.textContent = 'Goal set to '+((GOAL_LABEL[g]||g))+'. Tap "Calculate my targets" above to update your numbers for it.';
+}
+function setSexSel(s){
+  sexSel = s;
+  document.querySelectorAll('#sex-seg button').forEach(b=>b.classList.toggle('on', b.dataset.s===s));
 }
 const GOAL_LABEL = {cut:'Cutting', maintain:'Maintaining', bulk:'Bulking'};
+/* deterministic calc → fill the target fields (the coach adds judgment separately) */
+function calcProfileTargets(){
+  const ft=+$('f-pht-ft').value||0, inch=+$('f-pht-in').value||0;
+  const heightIn=(ft||inch)?(ft*12+inch):((S.profile&&S.profile.heightIn)||0);
+  const w=(S.weights&&S.weights.length)?S.weights[S.weights.length-1].w:null;
+  const age=+$('f-page').value;
+  if(!heightIn || !age || !w){ toast('Add height + age above, and log a weight first'); return; }
+  const plan=computeTargets({sex:sexSel, age, heightIn, weightLbs:w, activity:$('f-pactivity').value, goal:goalSel});
+  $('f-pcal').value=plan.cal; $('f-ppro').value=plan.protein; $('f-pcarb').value=plan.carbs; $('f-pfat').value=plan.fat; $('f-pwg').value=plan.water;
+  const hint=$('goal-hint'); if(hint) hint.textContent = 'Calculated for '+((GOAL_LABEL[goalSel]||goalSel))+' (maintenance ≈ '+plan.maintenance+' cal). Review the numbers below, then Save.';
+  toast('Calculated ✓ — review below, then Save');
+}
 function saveProfile(silent){
   const name=$('f-pname').value.trim();
   if(!name){ toast('Name required'); return false; }
@@ -2093,6 +2180,9 @@ function saveProfile(silent){
   if(pin && pin.length!==4){ toast('PIN must be 4 digits'); return false; }
   S.profile.name = name;
   S.profile.goal = goalSel;
+  S.profile.sex = sexSel;
+  S.profile.age = +$('f-page').value || null;
+  S.profile.activity = ($('f-pactivity')||{}).value || 'moderate';
   const ft=+$('f-pht-ft').value||0, inch=+$('f-pht-in').value||0;
   S.profile.heightIn = (ft||inch) ? (ft*12+inch) : (S.profile.heightIn||null);
   S.profile.calTarget = +$('f-pcal').value || 2400;
@@ -2105,12 +2195,6 @@ function saveProfile(silent){
   store.save(); personalize();
   if(!silent){ closeModal(); renderAll(); toast('Profile updated ✓'); }
   return true;
-}
-/* save what's entered, then hand off to the coach to recommend goal-based targets */
-function coachSetTargets(){
-  if(!saveProfile(true)) return;
-  closeModal(); renderAll(); go('coach');
-  setTimeout(()=>ask('My goal is to '+goalSel+'. Using my height, current weight, and training, recommend the daily calories, protein, carbs, fat, and water I should target — then give me numbers I can apply.'), 60);
 }
 let compoundDays = [];
 function renderDayPick(){
@@ -2231,7 +2315,9 @@ function buildContext(){
   return JSON.stringify({
     name: p.name,
     goal: p.goal || 'not set (ask them if it matters)',
+    sex: p.sex || 'not set', age: p.age || 'not set',
     heightInches: p.heightIn || null, height: p.heightIn ? (Math.floor(p.heightIn/12)+"'"+(p.heightIn%12)+'"') : 'not set (ask if you need it for targets)',
+    activityLevel: (ACTIVITY[p.activity]||{}).label || 'not set',
     calorieTarget: p.calTarget, proteinTarget: p.proTarget, carbTarget: carbTarget(), fatTarget: fatTarget(), waterGoalOz: p.waterGoal || 64,
     todayCalories: cal, todayProtein: pro, todayCarbs: carb, todayFat: fat,
     mealsToday: mealsToday().map(m=>`${m.name} (${m.cal} kcal, ${m.pro}g protein, ${m.carb||0}g carbs, ${m.fat||0}g fat, ${m.time})`),
@@ -2328,15 +2414,46 @@ function obGo(n){
   $('ob-'+n).classList.add('active');
   const f = $('ob-'+n).querySelector('input'); if(f) setTimeout(()=>f.focus(),200);
 }
+let obSex='male', obGoal='maintain', obPlan=null;
+function obSetSex(s){ obSex=s; document.querySelectorAll('#ob-sex-seg button').forEach(b=>b.classList.toggle('on', b.dataset.s===s)); }
+function obSetGoal(g){ obGoal=g; document.querySelectorAll('#ob-goal-seg button').forEach(b=>b.classList.toggle('on', b.dataset.g===g)); }
+function obHeightIn(){ return (+$('ob-ht-ft').value||0)*12 + (+$('ob-ht-in').value||0); }
 function obNext(n){
   if(n===0){
     const name=$('ob-name').value.trim();
     if(!name) return toast('Tell us your name!');
     if($('ob-pin').value.replace(/\D/g,'').length!==4) return toast('Pick a 4-digit PIN');
-    $('ob-final-name').textContent = name+'.';
   }
-  if(n===1 && !(+$('ob-w').value)) return toast('Enter your current weight');
+  if(n===1){
+    if(!(+$('ob-age').value)) return toast('Add your age');
+    if(!obHeightIn()) return toast('Add your height');
+  }
+  if(n===2){
+    if(!(+$('ob-w').value)) return toast('Enter your current weight');
+    obPlan = computeTargets({sex:obSex, age:+$('ob-age').value, heightIn:obHeightIn(), weightLbs:+$('ob-w').value, activity:$('ob-activity').value, goal:obGoal});
+    renderObPlan();
+  }
   obGo(n+1);
+}
+function obMacro(label,val,cvar){ return `<div style="flex:1;background:var(--surface2);border-radius:12px;padding:10px 6px;text-align:center;">
+  <div style="font-weight:900;font-size:15px;color:var(${cvar});">${val}</div>
+  <div style="font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;">${label}</div></div>`; }
+function renderObPlan(){
+  const p=obPlan; if(!p) return;
+  const gl = {cut:'a cut',maintain:'maintenance',bulk:'a lean bulk'}[obGoal]||'maintenance';
+  $('ob-plan-body').innerHTML = `
+    <div class="card" style="padding:16px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+        <div><div style="font-size:34px;font-weight:900;line-height:1;">${p.cal}</div><div style="font-size:12px;color:var(--muted);margin-top:2px;">calories / day</div></div>
+        <div style="text-align:right;font-size:12px;color:var(--muted);">maintenance ≈ ${p.maintenance}<br>set for ${gl}</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        ${obMacro('Protein', p.protein+'g', '--accent')}
+        ${obMacro('Carbs', p.carbs+'g', '--accent4')}
+        ${obMacro('Fat', p.fat+'g', '--accent2')}
+        ${obMacro('Water', p.water+' oz', '--accent3')}
+      </div>
+    </div>`;
 }
 
 /* =============== restore (name + PIN login) =============== */
@@ -2368,7 +2485,7 @@ async function adoptAccount(id){
   toast('Welcome back, '+P().name+'!');
   if(!S.pin) setTimeout(()=>{ openModal('profile'); toast('Lock it in — set a 4-digit PIN 🔐'); }, 1500);
 }
-async function finishOnboard(){
+async function finishOnboard(toCoach){
   const name=$('ob-name').value.trim() || 'Athlete';
   // guard against duplicate accounts: if this name already exists on the server,
   // reconnect to it instead of minting a new device id (the main cause of "extra Dave")
@@ -2385,10 +2502,15 @@ async function finishOnboard(){
   }catch(e){ /* offline / lookup failed — fall through and create */ }
   const w=+$('ob-w').value || 200;
   const gw=+$('ob-gw').value || null;
-  const cal=+$('ob-cal').value || 2400;
-  const pro=+$('ob-pro').value || 180;
+  const heightIn = obHeightIn() || null;
+  const plan = obPlan || computeTargets({sex:obSex, age:+$('ob-age').value, heightIn, weightLbs:w, activity:($('ob-activity')||{}).value, goal:obGoal});
   S = {meals:[], workouts:[], weights:[{w, at:Date.now()}], streak:0, stack:[]};
-  S.profile = {name, goalWeight:gw, calTarget:cal, proTarget:pro};
+  S.profile = {
+    name, goalWeight:gw, goal:obGoal,
+    sex:obSex, age:+$('ob-age').value||null, heightIn,
+    activity:($('ob-activity')||{}).value || 'moderate',
+    calTarget:plan.cal, proTarget:plan.protein, carbTarget:plan.carbs, fatTarget:plan.fat, waterGoal:plan.water
+  };
   S.pin = $('ob-pin').value.replace(/\D/g,'');
   S.id = randId();
   store.save();
@@ -2396,6 +2518,7 @@ async function finishOnboard(){
   setTimeout(loadCommunity, 2600); // first sync must land server-side before the feed will know us
   $('onboard').classList.remove('open');
   toast('Welcome to SPIN CLASS, '+name+'! 🎉');
+  if(toCoach===true){ go('coach'); setTimeout(()=>ask('You just set me up for a '+obGoal+'. Walk me through my targets ('+plan.cal+' cal, '+plan.protein+'g protein, '+plan.carbs+'g carbs, '+plan.fat+'g fat, '+plan.water+' oz water) and adjust anything that should change — dietary style, how aggressive I want to be, or anything you\'d tweak.'), 500); }
 }
 
 function personalize(){
