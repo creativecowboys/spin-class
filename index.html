@@ -80,6 +80,8 @@
   /* ---------- chart ---------- */
   .chartwrap{position:relative;}
   svg.chart{width:100%;height:130px;display:block;}
+  .w-axis{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px;padding:0 6px;font-variant-numeric:tabular-nums;}
+  .w-range{font-size:11px;color:var(--muted);margin-top:6px;text-align:center;font-variant-numeric:tabular-nums;}
   .chart-meta{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;}
   .chart-meta .w{font-size:26px;font-weight:900;}
   .chart-meta .w small{font-size:13px;color:var(--muted);font-weight:600;}
@@ -467,6 +469,10 @@
           <button class="btn ghost small" style="flex:1;" onclick="logWater(16)">+16 oz</button>
           <button class="btn ghost small" style="flex:1;" onclick="logWater(24)">+24 oz</button>
         </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <input id="water-custom" type="number" inputmode="numeric" placeholder="Custom oz" onkeydown="if(event.key==='Enter')logWaterCustom()" style="flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;outline:none;">
+          <button class="btn ghost small" onclick="logWaterCustom()">Add</button>
+        </div>
       </div>
       <div class="card" id="meal-list"><div class="empty">Nothing logged. Fuel up. 🍳</div></div>
       <button class="btn" onclick="openModal('meal')">+ Log a Meal</button>
@@ -512,6 +518,8 @@
             <button data-wv="all" onclick="setWeightView('all')">All</button>
           </div>
           <div class="chartwrap"><svg class="chart" id="wchart" viewBox="0 0 340 130" preserveAspectRatio="none"></svg></div>
+          <div id="w-axis" class="w-axis"></div>
+          <div id="w-range" class="w-range"></div>
           <button class="btn ghost small" style="margin:10px 0 12px;" onclick="openModal('weight')">+ Log Weight</button>
           <div class="field" style="margin-bottom:4px;"><label>Weigh-in history — tap to fix date or delete</label></div>
           <div id="w-history" style="max-height:200px;overflow-y:auto;"></div>
@@ -942,7 +950,7 @@ function go(t){
   $('main').scrollTop=0;
   if(t==='team'){ teamView('chat'); loadCommunity(); }
   if(t==='meals'){ mealDay=null; renderMeals(); }
-  if(t==='profile'){ stackDay=null; renderStack(); }
+  if(t==='profile'){ stackDay=null; renderStack(); renderProfileCard(); } // re-draw the weight chart now the tab is visible (SVG drawn while hidden renders blank)
 }
 
 /* =============== render =============== */
@@ -1033,7 +1041,7 @@ function renderWeightPanel(){
   if(sel) sel.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.wv===weightView));
   const all=(S.weights||[]).slice().sort((a,b)=>a.at-b.at);
   const p=P();
-  if(!all.length){ $('w-now').textContent='—'; $('w-delta').textContent='no weigh-ins yet'; drawChart([]); return; }
+  if(!all.length){ $('w-now').textContent='—'; $('w-delta').textContent='no weigh-ins yet'; drawChart([]); renderWeightAxis([]); return; }
   const cur=all[all.length-1].w;
   $('w-now').textContent=cur.toFixed(1);
   const view=weightsInView(all);
@@ -1046,7 +1054,26 @@ function renderWeightPanel(){
     $('w-delta').style.color='var(--muted)';
   }
   drawChart(view.map(e=>e.w));
+  renderWeightAxis(view);
   renderWeightHistory();
+}
+function fmtAxisDate(at){ return new Date(at).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function renderWeightAxis(view){
+  const ax=$('w-axis'), rg=$('w-range');
+  if(ax){
+    if(view.length>=2){
+      const first=view[0], last=view[view.length-1], mid=view[Math.floor((view.length-1)/2)];
+      const showMid = view.length>=3 && mid!==first && mid!==last;
+      ax.innerHTML = `<span>${fmtAxisDate(first.at)}</span>${showMid?`<span>${fmtAxisDate(mid.at)}</span>`:''}<span>${fmtAxisDate(last.at)}</span>`;
+    } else if(view.length===1){ ax.innerHTML = `<span>${fmtAxisDate(view[0].at)}</span>`; }
+    else ax.innerHTML='';
+  }
+  if(rg){
+    if(view.length){
+      const ws=view.map(e=>e.w), hi=Math.max(...ws), lo=Math.min(...ws);
+      rg.innerHTML = `High <b style="color:var(--text)">${hi.toFixed(1)}</b> · Low <b style="color:var(--text)">${lo.toFixed(1)}</b> · ${view.length} weigh-in${view.length===1?'':'s'}`;
+    } else rg.innerHTML='';
+  }
 }
 function renderWeightHistory(){
   const el=$('w-history'); if(!el) return;
@@ -1259,6 +1286,12 @@ function logWater(oz){
   if(oz===-999){ S.waterLog[iso]=0; }
   else { S.waterLog[iso] = Math.max(0, (S.waterLog[iso]||0) + oz); }
   store.save(); renderWater(iso);
+}
+function logWaterCustom(){
+  const el = $('water-custom'); if(!el) return;
+  const v = Math.round(+el.value);
+  if(!v) return;
+  logWater(v); el.value='';
 }
 function renderWater(iso){
   const el = $('water-card'); if(!el) return;
