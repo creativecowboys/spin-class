@@ -310,6 +310,8 @@
   .setrow input:focus{border-color:var(--accent);}
   .setrow input::placeholder{color:#55556a;font-weight:600;}
   .setrow .check{width:34px;height:34px;}
+  .setrow .setdel{width:26px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;font-size:14px;flex-shrink:0;}
+  .setrow .setdel:active{color:var(--accent2);}
   .setrow.done input{opacity:.55;}
   .addset{background:none;border:1px dashed var(--border);color:var(--muted);border-radius:10px;width:100%;padding:8px;font-size:12px;font-weight:700;cursor:pointer;margin-top:2px;}
   .wx-last{font-size:10.5px;color:var(--accent3);margin-top:-6px;margin-bottom:8px;}
@@ -336,6 +338,22 @@
   .exrow b{font-size:13.5px;display:block;}
   .exrow small{color:var(--muted);font-size:11px;}
   .exrow .go{color:var(--accent);font-weight:900;font-size:18px;}
+  /* day-picker workout cards: tap to preview, tap + to add */
+  .pk-wo{border-bottom:1px solid var(--border);}
+  .pk-wo:last-of-type{border-bottom:none;}
+  .pk-head{display:flex;align-items:center;gap:10px;padding:11px 4px;cursor:pointer;}
+  .pk-head .pk-t{min-width:0;flex:1;}
+  .pk-head .pk-t b{font-size:13.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pk-head .pk-t small{color:var(--muted);font-size:11px;}
+  .pk-chev{color:var(--muted);font-size:11px;transition:transform .15s;flex-shrink:0;}
+  .pk-wo.open .pk-chev{transform:rotate(90deg);color:var(--accent);}
+  .pk-go{width:30px;height:30px;border-radius:50%;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:900;font-size:16px;flex-shrink:0;}
+  .pk-go.on{background:var(--accent);color:#0b0b0f;border-color:var(--accent);}
+  .pk-body{display:none;padding:2px 4px 12px;}
+  .pk-wo.open .pk-body{display:block;}
+  .pk-ex{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:4px 0;border-top:1px solid rgba(255,255,255,.05);}
+  .pk-ex .pk-en{color:var(--text);}
+  .pk-ex .pk-et{color:var(--muted);flex-shrink:0;}
   .swapbtn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:11.5px;font-weight:700;cursor:pointer;flex-shrink:0;}
   .pickchips{display:flex;gap:8px;overflow-x:auto;padding:6px 0 10px;scrollbar-width:none;}
   .pickchips::-webkit-scrollbar{display:none;}
@@ -436,16 +454,18 @@
         <div class="rings" id="meal-rings"></div>
       </div>
       <div class="card" id="water-card" style="margin-bottom:12px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
           <b style="font-size:14px;">Hydration</b>
-          <span id="water-display" style="font-weight:800;font-size:14px;color:var(--accent3);">0 / 64 oz</span>
+          <div style="display:flex;align-items:baseline;gap:10px;">
+            <span id="water-display" style="font-weight:800;font-size:14px;color:var(--accent3);">0 / 64 oz</span>
+            <span onclick="logWater(-999)" style="font-size:11.5px;color:var(--muted);cursor:pointer;">Reset</span>
+          </div>
         </div>
         <div class="bar water"><i id="water-bar" style="width:0%"></i></div>
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-          <button class="btn ghost small" onclick="logWater(8)">+8 oz</button>
-          <button class="btn ghost small" onclick="logWater(16)">+16 oz</button>
-          <button class="btn ghost small" onclick="logWater(24)">+24 oz</button>
-          <button class="btn ghost small" style="color:var(--muted);margin-left:auto;" onclick="logWater(-999)">Reset</button>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn ghost small" style="flex:1;" onclick="logWater(8)">+8 oz</button>
+          <button class="btn ghost small" style="flex:1;" onclick="logWater(16)">+16 oz</button>
+          <button class="btn ghost small" style="flex:1;" onclick="logWater(24)">+24 oz</button>
         </div>
       </div>
       <div class="card" id="meal-list"><div class="empty">Nothing logged. Fuel up. 🍳</div></div>
@@ -689,6 +709,14 @@ function schedSync(){
       body: JSON.stringify({id:S.id, state:S})}).catch(()=>{});
   }, 1500);
 }
+/* immediate flush (no debounce) — used after a coach message so the conversation
+   reaches the server before the app can be closed/evicted */
+function syncNow(){
+  if(!S || !S.id || !S.profile) return;
+  clearTimeout(syncT);
+  fetch('/api/sync', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({id:S.id, state:S})}).catch(()=>{});
+}
 async function loadRemote(){
   try{
     const pr = await fetch('/api/program').then(r=>r.ok?r.json():null).catch(()=>null);
@@ -699,7 +727,9 @@ async function loadRemote(){
       const sr = await fetch('/api/sync?id='+S.id).then(r=>r.ok?r.json():null).catch(()=>null);
       if(sr && sr.state && (sr.updated||0) > (S.updatedAt||0)+2000){
         const keepActive = S.active; // never lose an in-progress workout when new data (e.g. an admin schedule push) arrives
+        const keepChat = S.chat || []; // and never let a sync shrink the coach conversation
         S = sr.state;
+        if(keepChat.length > (S.chat||[]).length) S.chat = keepChat;
         if(keepActive){ S.active = keepActive; store.save(); } // updated data lands; the live workout stays put and shows when they finish
         else {
           if([scrubSeed(), migrateWeights(), stripDayNames()].some(Boolean)) store.save();
@@ -1241,15 +1271,29 @@ function renderWeek(){
     </div>`;
   }).join('');
 }
+let pickerOpen = new Set(); // which day-picker workout previews are expanded (by ref key)
+function togglePreview(iso, key){ pickerOpen.has(key) ? pickerOpen.delete(key) : pickerOpen.add(key); openDayAssign(iso); }
 function openDayAssign(iso){
   const cur = dayRefs(iso);
   const has = ref => cur.some(r=>r===ref);
   const d = new Date(iso+'T12:00:00');
-  const customRows = (S.customWorkouts||[]).map(w=>{
-    const ref = 'c:'+w.id;
-    return `<div class="cw-item" data-id="${w.id}" data-iso="${iso}">
-      <div class="cw-del" onclick="event.stopPropagation();deleteCustomWorkout('${w.id}')">Delete</div>
-      <div class="cw-face exrow" onclick="toggleDay('${iso}','${ref}')"><div><b>${esc(w.name)}</b><small>${(w.ex||[]).length} exercises · yours</small></div><div class="go">${has(ref)?'✓':'+'}</div></div>
+  // unified workout list: crew-visible program workouts + the user's custom ones
+  const items = [];
+  PROGRAM.forEach((p,i)=>{ if(workoutVisible(p)) items.push({ref:i, key:String(i), title:`Day ${i+1} — ${p.name}`, sub:p.sub, ex:p.ex, custom:false}); });
+  (S.customWorkouts||[]).forEach(w=>{ items.push({ref:'c:'+w.id, key:'c:'+w.id, title:w.name, sub:(w.ex||[]).length+' exercises · yours', ex:w.ex, custom:true, id:w.id}); });
+  const rows = items.map(it=>{
+    const open = pickerOpen.has(it.key), sel = has(it.ref);
+    const refArg = typeof it.ref==='string' ? `'${it.ref}'` : it.ref;
+    const exRows = (it.ex||[]).length
+      ? it.ex.map(e=>`<div class="pk-ex"><span class="pk-en">${esc(e[0])}</span><span class="pk-et">${esc(e[1]||'')}</span></div>`).join('')
+      : '<div class="pk-ex"><span class="pk-en" style="color:var(--muted)">No exercises listed.</span></div>';
+    return `<div class="pk-wo${open?' open':''}">
+      <div class="pk-head" onclick="togglePreview('${iso}','${it.key}')">
+        <div class="pk-t"><b>${esc(it.title)}</b><small>${esc(it.sub||'')}</small></div>
+        <span class="pk-chev">▶</span>
+        <div class="pk-go${sel?' on':''}" onclick="event.stopPropagation();toggleDay('${iso}',${refArg})">${sel?'✓':'+'}</div>
+      </div>
+      <div class="pk-body">${exRows}${it.custom?`<button class="btn ghost small" style="margin-top:8px;" onclick="deleteCustomWorkout('${it.id}')">Delete this workout</button>`:''}</div>
     </div>`;
   }).join('');
   // when today has one or more assigned, offer a Start button per scheduled workout
@@ -1257,17 +1301,13 @@ function openDayAssign(iso){
     ? cur.map(r=>{ const w=workoutFor(r); return w?`<button class="btn" style="margin-top:8px;" onclick="closeModal();startWorkout(${typeof r==='string'?`'${r}'`:r})">▶ Start ${esc(w.name)} Now</button>`:''; }).join('')
     : '';
   $('sheet').innerHTML = `<h3>${d.toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'})}</h3>
-    <div class="tagline" style="margin:-4px 0 8px;">Tap to add — you can schedule more than one workout on a day.</div>
-    <div class="exlist">` +
-    PROGRAM.map((p,i)=>({p,i})).filter(o=>workoutVisible(o.p)).map(({p,i})=>`<div class="exrow" onclick="toggleDay('${iso}',${i})"><div><b>Day ${i+1} — ${esc(p.name)}</b><small>${esc(p.sub)}</small></div><div class="go">${has(i)?'✓':'+'}</div></div>`).join('') +
-    customRows +
-    `</div>
+    <div class="tagline" style="margin:-4px 0 8px;">Tap a workout to preview it, then tap + to add it — you can add more than one to a day.</div>
+    <div class="exlist">${rows}</div>
     <button class="btn ghost" style="margin-top:10px;" onclick="openBuilder('${iso}')">+ Build a Workout</button>
     <button class="btn ghost" style="margin-top:10px;" onclick="openCardio('${iso}')">🏃 Log Cardio</button>
     ${cur.length?`<button class="btn ghost small" style="margin-top:10px;" onclick="clearDay('${iso}')">Clear This Day</button>`:''}
     ${startRows}`;
   $('modal').classList.add('open');
-  setTimeout(wireSwipe, 30);
 }
 /* swipe custom-workout rows left to reveal Delete (pointer events → works touch + mouse) */
 function wireSwipe(){
@@ -1609,6 +1649,7 @@ function renderActive(){
             <input type="number" inputmode="decimal" placeholder="${wPl}" value="${s.w}" onchange="setVal(${xi},${si},'w',this.value)">
             <input type="number" inputmode="numeric" placeholder="${rPl}" value="${s.r}" onchange="setVal(${xi},${si},'r',this.value)">
             <div class="check${s.done?' done':''}" onclick="toggleSet(${xi},${si})">✓</div>
+            <div class="setdel" title="Remove set" onclick="delSet(${xi},${si})">✕</div>
           </div>`;
         }).join('')}
         <button class="addset" onclick="addSet(${xi})">+ Add Set</button>
@@ -1691,6 +1732,7 @@ function toggleSet(xi,si){
   store.save(); renderActive();
 }
 function addSet(xi){ S.active.ex[xi].sets.push({w:'',r:'',done:false}); store.save(); renderActive(); }
+function delSet(xi,si){ const ex=S.active&&S.active.ex[xi]; if(!ex||!ex.sets[si]) return; ex.sets.splice(si,1); store.save(); renderActive(); }
 function tickElapsed(){
   const el = $('wo-elapsed');
   if(!el || !S.active) return;
@@ -2217,7 +2259,7 @@ async function send(){
   }
   msgs.scrollTop=msgs.scrollHeight;
   S.chat = chatHist.slice(-60);
-  store.save();
+  store.save(); syncNow();
 }
 
 /* scan a nutrition label → coach reads it (vision) → "+ Log" button via LOG_MEAL tag */
@@ -2241,7 +2283,7 @@ async function sendCoachImage(file){
   try{ dataUrl=await compressImage(file, 1100, 0.82); }catch(e){ dataUrl=null; }
   if(!dataUrl){ try{ dataUrl=await fileToDataUrl(file); }catch(e){ dataUrl=null; } }
   const m = dataUrl && /^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,([^]+)$/i.exec(dataUrl);
-  const finish=(who,txt,html)=>{ $('typing').classList.remove('on'); if(who) chatHist.push(who); chatHist.push({role:'assistant',content:txt}); msgs.insertAdjacentHTML('beforeend', html||`<div class="msg ai">${esc(txt)}</div>`); msgs.scrollTop=msgs.scrollHeight; S.chat=chatHist.slice(-60); store.save(); };
+  const finish=(who,txt,html)=>{ $('typing').classList.remove('on'); if(who) chatHist.push(who); chatHist.push({role:'assistant',content:txt}); msgs.insertAdjacentHTML('beforeend', html||`<div class="msg ai">${esc(txt)}</div>`); msgs.scrollTop=msgs.scrollHeight; S.chat=chatHist.slice(-60); store.save(); syncNow(); };
   if(!m){
     return finish({role:'user',content:'📷 Sent a photo'}, "I couldn't read that photo — snap a clearer, well-lit, straight-on shot of the label (a JPG or PNG works best) and try again.");
   }
