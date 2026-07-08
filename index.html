@@ -504,10 +504,12 @@
     <section class="tab" id="tab-train">
       <div id="train-active" style="display:none;"></div>
       <div id="train-normal">
+      <div id="resume-banner"></div>
       <div class="hero" style="margin-top:8px;">
         <div class="hi" id="t-today-label">Today's workout</div>
         <div class="big"><em id="t-today">—</em></div>
         <div style="color:var(--muted);font-size:13px;margin-top:6px;" id="t-today-sub"></div>
+        <div id="t-today-actions" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"></div>
       </div>
       <h2 class="section">This Week</h2>
       <div class="card">
@@ -1196,9 +1198,21 @@ function newCustomId(){ return 'w'+Array.from(crypto.getRandomValues(new Uint8Ar
 
 /* =============== week calendar =============== */
 let weekOff = 0;
+/* a day can hold MULTIPLE workouts. Storage stays back-compatible: a single
+   workout is kept as a scalar ref, several as an array of refs. */
+function dayRefs(iso){
+  const s = S.schedule ? S.schedule[iso] : null;
+  if(s==null) return [];
+  return Array.isArray(s) ? s.slice() : [s];
+}
+function setDayRefs(iso, refs){
+  S.schedule = S.schedule || {};
+  if(!refs || !refs.length) delete S.schedule[iso];
+  else S.schedule[iso] = refs.length===1 ? refs[0] : refs;
+}
 function todaysDay(){
-  const s = S.schedule && S.schedule[todayISO()];
-  return (s!=null) ? s : (S.programDay||0);
+  const r = dayRefs(todayISO());
+  return r.length ? r[0] : (S.programDay||0);
 }
 function weekDates(off){
   const now = new Date();
@@ -1216,36 +1230,42 @@ function renderWeek(){
   $('wk-label').textContent = days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+days[6].toLocaleDateString('en-US',{month:'short',day:'numeric'});
   $('weekcal').innerHTML = days.map(d=>{
     const iso = isoOf(d);
-    const assigned = S.schedule ? S.schedule[iso] : null;
+    const refs = dayRefs(iso);
     const done = S.workouts.some(w=>w.date===iso);
+    const label = refs.length ? esc((workoutFor(refs[0])||{name:'—'}).name)+(refs.length>1?` +${refs.length-1}`:'') : '—';
     return `<div class="wd${iso===t?' today':''}${done?' done':''}" onclick="openDayAssign('${iso}')">
       <div class="dn">${d.toLocaleDateString('en-US',{weekday:'short'})}</div>
       <div class="dt">${d.getDate()}</div>
       ${done?'<div class="ck">✓</div>':''}
-      <div class="sess${assigned==null?' none':''}">${assigned!=null?esc((workoutFor(assigned)||{name:'—'}).name):'—'}</div>
+      <div class="sess${refs.length?'':' none'}">${label}</div>
     </div>`;
   }).join('');
 }
 function openDayAssign(iso){
-  const cur = S.schedule ? S.schedule[iso] : null;
+  const cur = dayRefs(iso);
+  const has = ref => cur.some(r=>r===ref);
   const d = new Date(iso+'T12:00:00');
   const customRows = (S.customWorkouts||[]).map(w=>{
     const ref = 'c:'+w.id;
-    const sel = cur===ref;
     return `<div class="cw-item" data-id="${w.id}" data-iso="${iso}">
       <div class="cw-del" onclick="event.stopPropagation();deleteCustomWorkout('${w.id}')">Delete</div>
-      <div class="cw-face exrow" onclick="assignDay('${iso}','${ref}')"><div><b>${esc(w.name)}</b><small>${(w.ex||[]).length} exercises · yours</small></div><div class="go">${sel?'✓':'+'}</div></div>
+      <div class="cw-face exrow" onclick="toggleDay('${iso}','${ref}')"><div><b>${esc(w.name)}</b><small>${(w.ex||[]).length} exercises · yours</small></div><div class="go">${has(ref)?'✓':'+'}</div></div>
     </div>`;
   }).join('');
+  // when today has one or more assigned, offer a Start button per scheduled workout
+  const startRows = (iso===todayISO() && cur.length)
+    ? cur.map(r=>{ const w=workoutFor(r); return w?`<button class="btn" style="margin-top:8px;" onclick="closeModal();startWorkout(${typeof r==='string'?`'${r}'`:r})">▶ Start ${esc(w.name)} Now</button>`:''; }).join('')
+    : '';
   $('sheet').innerHTML = `<h3>${d.toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'})}</h3>
+    <div class="tagline" style="margin:-4px 0 8px;">Tap to add — you can schedule more than one workout on a day.</div>
     <div class="exlist">` +
-    PROGRAM.map((p,i)=>({p,i})).filter(o=>workoutVisible(o.p)).map(({p,i})=>`<div class="exrow" onclick="assignDay('${iso}',${i})"><div><b>Day ${i+1} — ${esc(p.name)}</b><small>${esc(p.sub)}</small></div><div class="go">${cur===i?'✓':'+'}</div></div>`).join('') +
+    PROGRAM.map((p,i)=>({p,i})).filter(o=>workoutVisible(o.p)).map(({p,i})=>`<div class="exrow" onclick="toggleDay('${iso}',${i})"><div><b>Day ${i+1} — ${esc(p.name)}</b><small>${esc(p.sub)}</small></div><div class="go">${has(i)?'✓':'+'}</div></div>`).join('') +
     customRows +
     `</div>
     <button class="btn ghost" style="margin-top:10px;" onclick="openBuilder('${iso}')">+ Build a Workout</button>
     <button class="btn ghost" style="margin-top:10px;" onclick="openCardio('${iso}')">🏃 Log Cardio</button>
-    ${cur!=null?`<button class="btn ghost small" style="margin-top:10px;" onclick="assignDay('${iso}',null)">Clear This Day</button>`:''}
-    ${(iso===todayISO() && cur!=null && workoutFor(cur))?`<button class="btn" style="margin-top:10px;" onclick="closeModal();startWorkout(${typeof cur==='string'?`'${cur}'`:cur})">▶ Start ${esc(workoutFor(cur).name)} Now</button>`:''}`;
+    ${cur.length?`<button class="btn ghost small" style="margin-top:10px;" onclick="clearDay('${iso}')">Clear This Day</button>`:''}
+    ${startRows}`;
   $('modal').classList.add('open');
   setTimeout(wireSwipe, 30);
 }
@@ -1272,18 +1292,27 @@ function wireSwipe(){
 function deleteCustomWorkout(id){
   if(!confirm('Delete this workout? It will be removed from any days it was assigned to.')) return;
   S.customWorkouts = (S.customWorkouts||[]).filter(w=>w.id!==id);
-  // unassign it from any scheduled days
+  // unassign it from any scheduled days (handles single-ref and multi-ref days)
   const ref='c:'+id;
-  Object.keys(S.schedule||{}).forEach(k=>{ if(S.schedule[k]===ref) delete S.schedule[k]; });
+  Object.keys(S.schedule||{}).forEach(k=>{ setDayRefs(k, dayRefs(k).filter(r=>r!==ref)); });
   store.save(); renderTrain(); renderHome();
   closeModal(); toast('Workout deleted');
 }
-function assignDay(iso, ref){
-  S.schedule = S.schedule || {};
-  if(ref==null) delete S.schedule[iso]; else S.schedule[iso]=ref;
-  store.save(); closeModal(); renderTrain(); renderHome();
+function toggleDay(iso, ref){
+  const refs = dayRefs(iso);
+  const i = refs.findIndex(r=>r===ref);
+  const adding = i<0;
+  if(adding) refs.push(ref); else refs.splice(i,1);
+  setDayRefs(iso, refs);
+  store.save(); renderTrain(); renderHome();
   const w = workoutFor(ref);
-  toast(ref==null?'Day cleared':(w?w.name:'Workout')+' scheduled ✓');
+  toast((w?w.name:'Workout') + (adding?' added ✓':' removed'));
+  openDayAssign(iso); // keep the picker open so several can be toggled
+}
+function clearDay(iso){
+  setDayRefs(iso, []);
+  store.save(); closeModal(); renderTrain(); renderHome();
+  toast('Day cleared');
 }
 
 /* =============== build-a-workout =============== */
@@ -1352,16 +1381,16 @@ function saveCardio(){
   S.workouts.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   S.streak += 1;
   cardioPick=null;
-  store.save(); renderAll(); closeModal(); toast(c.type+' logged ✓');
+  store.save(); closeModal(); renderAll(); toast(c.type+' logged ✓');
 }
 let openDay = null;
 function renderProgram(){
-  // only today's SCHEDULED program day gets the badge / expands by default
-  const ref = S.schedule && S.schedule[todayISO()];
-  const cur = (typeof ref==='number') ? ref : -1;
-  if(openDay===null) openDay = cur;
+  // today's SCHEDULED program day(s) get the badge / expand by default
+  const todayNums = dayRefs(todayISO()).filter(r=>typeof r==='number');
+  const curSet = new Set(todayNums);
+  if(openDay===null) openDay = todayNums.length ? todayNums[0] : -1;
   $('program').innerHTML = PROGRAM.map((p,i)=>({p,i})).filter(o=>workoutVisible(o.p)).map(({p,i})=>{
-    const today = i===cur;
+    const today = curSet.has(i);
     const rows = p.ex.map(e=>`<div class="ex"><div class="xn${e[3]?' big':''}">${e[0]}</div><div class="xs">${e[1]}</div><div class="xr">${e[2]}</div></div>`).join('');
     const logBtn = isRestDay(p)
       ? `<button class="btn small" style="margin-top:12px;" onclick="event.stopPropagation();logSession(${i})">✓ Done — Log Rest Day</button>`
@@ -1391,8 +1420,22 @@ function logSession(i){
   toast(p.name+' logged ✓');
 }
 
+/* a workout started on an earlier calendar day is "stale" — it shouldn't hijack
+   today's Train tab (that's what hid Recent Sessions). Show it as a resume banner instead. */
+function activeStale(){
+  if(!S.active || !S.active.started) return false;
+  const d=new Date(S.active.started), t=new Date();
+  return d.getFullYear()!==t.getFullYear() || d.getMonth()!==t.getMonth() || d.getDate()!==t.getDate();
+}
+function resumeWorkout(){
+  if(!S.active) return;
+  $('train-normal').style.display='none';
+  $('train-active').style.display='block';
+  renderActive();
+  $('main').scrollTop=0;
+}
 function renderTrain(){
-  if(S.active){
+  if(S.active && !activeStale()){
     $('train-normal').style.display='none';
     $('train-active').style.display='block';
     renderActive();
@@ -1400,9 +1443,26 @@ function renderTrain(){
   }
   $('train-normal').style.display='block';
   $('train-active').style.display='none';
-  const todayRef = (S.schedule && S.schedule[todayISO()]!=null) ? S.schedule[todayISO()] : null;
+  // stale in-progress workout: offer to resume/finish rather than block the whole tab
+  const rb=$('resume-banner');
+  if(rb){
+    if(S.active){
+      const a=S.active, dn=a.ex.reduce((t,x)=>t+x.sets.filter(s=>s.done).length,0);
+      const started=new Date(a.started).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+      rb.innerHTML=`<div class="card" style="border-color:var(--accent);margin-top:8px;">
+        <b>Workout in progress</b>
+        <div style="color:var(--muted);font-size:13px;margin:4px 0 10px;">${esc(a.name||'Workout')} — started ${started}, ${dn} set${dn===1?'':'s'} in.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn small" onclick="resumeWorkout()">Resume</button>
+          <button class="btn ghost small" onclick="finishWorkout()">Finish now</button>
+          <button class="btn ghost small" onclick="cancelWorkout()">Discard</button>
+        </div></div>`;
+    } else rb.innerHTML='';
+  }
+  const todayR = dayRefs(todayISO());
   const trainedToday = S.workouts.some(w=>w.date===todayISO());
-  if(todayRef==null){
+  const actions = $('t-today-actions'); if(actions) actions.innerHTML='';
+  if(!todayR.length){
     // nothing assigned to today
     $('t-today-label').textContent = trainedToday ? 'Nice work today' : 'Today';
     $('t-today').textContent = trainedToday ? 'Logged ✓' : 'Rest day';
@@ -1410,11 +1470,24 @@ function renderTrain(){
       ? 'Nothing was on the calendar, but you got after it anyway.'
       : 'No exercise scheduled today — rest up and enjoy your day.';
   } else {
-    const tp = workoutFor(todayRef) || PROGRAM[0];
-    const done = S.workouts.some(w=>w.date===todayISO() && w.day===todayRef);
-    $('t-today-label').textContent = done ? 'Done today' : 'Scheduled for today';
-    $('t-today').textContent = tp.name;
-    $('t-today-sub').textContent = done ? 'In the books. Recovery counts too.' : tp.sub + ' — it\'s queued up below.';
+    const wos = todayR.map(r=>({r, w:workoutFor(r)})).filter(o=>o.w);
+    const allDone = todayR.every(r=>S.workouts.some(w=>w.date===todayISO() && w.day===r));
+    if(wos.length<=1){
+      const tp = wos[0] ? wos[0].w : PROGRAM[0];
+      $('t-today-label').textContent = allDone ? 'Done today' : 'Scheduled for today';
+      $('t-today').textContent = tp.name;
+      $('t-today-sub').textContent = allDone ? 'In the books. Recovery counts too.' : tp.sub + ' — start it below.';
+    } else {
+      $('t-today-label').textContent = allDone ? 'Done today' : 'Scheduled for today';
+      $('t-today').textContent = wos.length+' workouts';
+      $('t-today-sub').textContent = wos.map(o=>o.w.name).join(' · ');
+    }
+    // a Start button per scheduled workout (skips ones already logged today)
+    if(actions) actions.innerHTML = wos.map(o=>{
+      const done = S.workouts.some(w=>w.date===todayISO() && w.day===o.r);
+      const rr = typeof o.r==='string' ? `'${o.r}'` : o.r;
+      return `<button class="btn small${done?' ghost':''}" onclick="startWorkout(${rr})">${done?'✓ ':'▶ '}${esc(o.w.name)}</button>`;
+    }).join('');
   }
   renderWeek();
   renderProgram();
@@ -1628,7 +1701,7 @@ setInterval(tickElapsed, 1000);
 function cancelWorkout(){ S.active=null; store.save(); renderTrain(); }
 function finishWorkout(){
   const a = S.active;
-  const dur = Math.max(1, Math.round((Date.now()-a.started)/60000));
+  const dur = Math.min(180, Math.max(1, Math.round((Date.now()-a.started)/60000))); // cap so a stale/forgotten session doesn't log a multi-day duration
   let vol = 0, setsDone = 0;
   const detail = [];
   S.lastLifts = S.lastLifts || {};
@@ -1718,13 +1791,17 @@ function toggleColl(k){
   body.style.display = open?'':'none';
   if(ch) ch.textContent = open?'▾':'▸';
 }
+function expandColl(k){ const body=$('coll-'+k), ch=$('ch-'+k); if(!body) return; body.style.display=''; if(ch) ch.textContent='▾'; }
 
 /* =============== progress photos =============== */
 function fmtPhotoDate(p){ const d=new Date((p.date||todayISO())+'T12:00:00'); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
 function sortedPhotos(){ return (S.photos||[]).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')); }
+let photosAutoExpanded=false;
 function renderPhotos(){
   const el=$('photo-area'); if(!el) return;
   const ph=sortedPhotos();
+  // so members can actually find their photos: open the section once per load when any exist
+  if(ph.length && !photosAutoExpanded){ photosAutoExpanded=true; expandColl('photos'); }
   if(!ph.length){ el.innerHTML='<div class="card"><div class="empty">No photos yet. Snap your starting point. 📸</div></div>'; return; }
   let html='';
   if(ph.length>1){
@@ -1781,7 +1858,9 @@ async function savePhoto(){
     if(r.ok && d.url){
       S.photos=S.photos||[];
       S.photos.push({url:d.url, date, at:Date.now()});
-      pendingPhoto=null; store.save(); renderAll(); closeModal(); toast('Photo added ✓');
+      pendingPhoto=null; store.save(); closeModal(); renderAll();
+      expandColl('photos'); const pa=$('photo-area'); if(pa) pa.scrollIntoView({behavior:'smooth',block:'center'});
+      toast('Photo added ✓');
     } else { if(btn){ btn.disabled=false; btn.textContent='Save Photo'; } toast(d.error==='too large'?'Photo too large — try a smaller one':'Upload failed — try again'); }
   }catch(e){ if(btn){ btn.disabled=false; btn.textContent='Save Photo'; } toast('Upload failed — try again'); }
 }
@@ -1913,13 +1992,13 @@ function saveMeal(editIndex){
     toast('Meal logged ✓');
   }
   mealDay=date; // show the day we just touched
-  store.save(); renderAll(); closeModal();
+  store.save(); closeModal(); renderAll();
 }
 function deleteMeal(index){
   if(index==null || !S.meals[index]) return;
   if(!confirm('Delete this meal?')) return;
   S.meals.splice(index,1);
-  store.save(); renderAll(); closeModal(); toast('Meal deleted');
+  store.save(); closeModal(); renderAll(); toast('Meal deleted');
 }
 function saveWorkout(){
   const type=$('f-type').value.trim(), dur=+$('f-dur').value||0;
@@ -1929,7 +2008,7 @@ function saveWorkout(){
   S.workouts.unshift({type, dur, emoji:'🏋️', when, date});
   S.workouts.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   S.streak += 1;
-  store.save(); renderAll(); closeModal(); toast('Workout logged ✓');
+  store.save(); closeModal(); renderAll(); toast('Workout logged ✓');
 }
 function saveWeight(editIndex){
   const w=+$('f-w').value;
@@ -1945,13 +2024,13 @@ function saveWeight(editIndex){
   if(editIndex!=null && S.weights[editIndex]){ S.weights[editIndex]={w, at}; toast('Weigh-in updated ✓'); }
   else { S.weights.push({w, at}); toast('Weight logged ✓'); }
   S.weights.sort((a,b)=>a.at-b.at);
-  store.save(); renderAll(); closeModal();
+  store.save(); closeModal(); renderAll();
 }
 function deleteWeight(index){
   if(index==null || !S.weights || !S.weights[index]) return;
   if(!confirm('Delete this weigh-in?')) return;
   S.weights.splice(index,1);
-  store.save(); renderAll(); closeModal(); toast('Weigh-in deleted');
+  store.save(); closeModal(); renderAll(); toast('Weigh-in deleted');
 }
 let goalSel = 'maintain';
 function setGoalSel(g){
@@ -1973,7 +2052,7 @@ function saveProfile(){
   const pin = $('f-ppin').value.replace(/\D/g,'');
   if(pin && pin.length!==4) return toast('PIN must be 4 digits');
   if(pin) S.pin = pin;
-  store.save(); personalize(); renderAll(); closeModal(); toast('Profile updated ✓');
+  store.save(); personalize(); closeModal(); renderAll(); toast('Profile updated ✓');
 }
 let compoundDays = [];
 function renderDayPick(){
@@ -1999,13 +2078,13 @@ function saveCompound(editIndex){
     S.stack.push({name, dose, hour:h, min:m, days, takenOn:{}});
     toast(name+' added ✓');
   }
-  store.save(); renderAll(); closeModal();
+  store.save(); closeModal(); renderAll();
 }
 function deleteCompound(index){
   if(index==null || !S.stack[index]) return;
   if(!confirm('Remove this from your stack?')) return;
   S.stack.splice(index,1);
-  store.save(); renderAll(); closeModal(); toast('Removed from stack');
+  store.save(); closeModal(); renderAll(); toast('Removed from stack');
 }
 
 /* =============== offline coach fallback (used only when the API is unreachable) =============== */
