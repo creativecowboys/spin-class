@@ -80,6 +80,8 @@
   /* ---------- chart ---------- */
   .chartwrap{position:relative;}
   svg.chart{width:100%;height:130px;display:block;}
+  .wh-month{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin:14px 4px 6px;}
+  .wh-month span{color:var(--accent3);font-size:10.5px;}
   .w-axis{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px;padding:0 6px;font-variant-numeric:tabular-nums;}
   .w-range{font-size:11px;color:var(--muted);margin-top:6px;text-align:center;font-variant-numeric:tabular-nums;}
   .chart-meta{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;}
@@ -485,6 +487,11 @@
         <div class="big" id="p-name" style="font-size:26px;">—</div>
         <div style="color:var(--muted);font-size:13px;margin-top:6px;" id="p-meta"></div>
         <button class="btn ghost small" style="margin-top:12px;" onclick="openModal('profile')">Edit Profile · Targets · PIN</button>
+      </div>
+
+      <h2 class="section coll" onclick="toggleColl('history')">Workout History <span id="wh-count" style="color:var(--accent);font-weight:800;"></span> <span class="coll-ch" id="ch-history">▸</span></h2>
+      <div class="coll-body" id="coll-history" style="display:none;">
+        <div id="profile-workouts"></div>
       </div>
 
       <h2 class="section coll" onclick="toggleColl('photos')">Progress Photos <span class="coll-ch" id="ch-photos">▸</span></h2>
@@ -1551,6 +1558,23 @@ function logSession(i){
   toast(p.name+' logged ✓');
 }
 
+/* one logged workout: the row + its expandable set detail. `prefix` keeps the
+   detail element ids unique so the same list can render on Train AND Profile.
+   wi must stay the real S.workouts index — reopenWorkout(wi) relies on it. */
+function workoutItemHtml(w, wi, prefix){
+  const extra = w.vol ? ` · ${w.setsDone} sets · ${w.vol.toLocaleString()} lb` : '';
+  const id = prefix+'-'+wi;
+  const detail = `<div class="histdetail" id="${id}">`+
+    (w.detail ? w.detail.map(d=>`<b style="color:var(--text)">${esc(d.name)}</b>: ${d.sets.map(s=>isTimed(d.name)?(s.r+'s'+(s.w?' · '+s.w+'lb':'')):(s.w+'×'+s.r)).join(', ')}`).join('<br>') : '<span>No set detail logged.</span>')+
+    `<br><button class="btn ghost small" style="margin-top:8px;" onclick="event.stopPropagation();reopenWorkout(${wi})">✎ Add / Edit Sets</button>`+
+    `</div>`;
+  return `<div class="item" onclick="document.getElementById('${id}').classList.toggle('open')" style="cursor:pointer;">
+    <div class="emoji">${w.emoji}</div>
+    <div class="info"><b>${esc(w.type)}</b><small>${w.when}${extra}</small></div>
+    <div class="val">${w.dur}<small>MIN</small></div>
+  </div>${detail}`;
+}
+
 /* a workout started on an earlier calendar day is "stale" — it shouldn't hijack
    today's Train tab (that's what hid Recent Sessions). Show it as a resume banner instead. */
 function activeStale(){
@@ -1623,18 +1647,9 @@ function renderTrain(){
   renderWeek();
   renderProgram();
   const el = $('workout-list');
-  el.innerHTML = S.workouts.length ? S.workouts.map((w,wi)=>{
-    const extra = w.vol ? ` · ${w.setsDone} sets · ${w.vol.toLocaleString()} lb` : '';
-    const detail = `<div class="histdetail" id="hd-${wi}">`+
-      (w.detail ? w.detail.map(d=>`<b style="color:var(--text)">${esc(d.name)}</b>: ${d.sets.map(s=>isTimed(d.name)?(s.r+'s'+(s.w?' · '+s.w+'lb':'')):(s.w+'×'+s.r)).join(', ')}`).join('<br>') : '<span>No set detail logged.</span>')+
-      `<br><button class="btn ghost small" style="margin-top:8px;" onclick="event.stopPropagation();reopenWorkout(${wi})">✎ Add / Edit Sets</button>`+
-      `</div>`;
-    return `<div class="item" onclick="document.getElementById('hd-${wi}').classList.toggle('open')" style="cursor:pointer;">
-      <div class="emoji">${w.emoji}</div>
-      <div class="info"><b>${esc(w.type)}</b><small>${w.when}${extra}</small></div>
-      <div class="val">${w.dur}<small>MIN</small></div>
-    </div>${detail}`;
-  }).join('') : '<div class="empty">No sessions yet. First one\'s free.</div>';
+  el.innerHTML = S.workouts.length
+    ? S.workouts.map((w,wi)=>workoutItemHtml(w,wi,'hd')).join('')
+    : '<div class="empty">No sessions yet. First one\'s free.</div>';
 }
 
 /* =============== edit a finished workout =============== */
@@ -1915,8 +1930,32 @@ function renderProfileCard(){
   $('p-meta').textContent = (p.goal ? GOAL_LABEL[p.goal]+' · ' : '')
     + (wv!=null ? wv.toFixed(1)+' lbs'+(p.goalWeight?' → '+p.goalWeight:'') : 'no weigh-ins yet')
     + ' · '+p.calTarget+' kcal / '+p.proTarget+'g P';
+  renderWorkoutHistory();
   renderPhotos();
   renderWeightPanel();
+}
+/* full training history on the Profile tab, grouped by month — the place to go
+   back and review your own workouts (Train's list is the recent/post-session view) */
+let historyAutoExpanded=false;
+function renderWorkoutHistory(){
+  const el=$('profile-workouts'); if(!el) return;
+  const ws=S.workouts||[];
+  const cnt=$('wh-count'); if(cnt) cnt.textContent = ws.length ? '· '+ws.length : '';
+  if(!ws.length){ el.innerHTML='<div class="card"><div class="empty">No workouts logged yet. Go get one. 🏋️</div></div>'; return; }
+  if(!historyAutoExpanded){ historyAutoExpanded=true; expandColl('history'); } // make it findable on first open
+  // group by month, keeping the REAL S.workouts index (reopenWorkout depends on it)
+  const groups=[];
+  ws.forEach((w,wi)=>{
+    const key = w.date ? new Date(w.date+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}) : 'Earlier';
+    let g=groups.find(x=>x.key===key);
+    if(!g){ g={key, items:[]}; groups.push(g); }
+    g.items.push({w,wi});
+  });
+  el.innerHTML = groups.map(g=>{
+    const vol=g.items.reduce((t,x)=>t+(x.w.vol||0),0);
+    return `<div class="wh-month"><b>${esc(g.key)}</b><span>${g.items.length} session${g.items.length===1?'':'s'}${vol?' · '+vol.toLocaleString()+' lb':''}</span></div>
+      <div class="card">${g.items.map(({w,wi})=>workoutItemHtml(w,wi,'pw')).join('')}</div>`;
+  }).join('');
 }
 function toggleColl(k){
   const body=$('coll-'+k), ch=$('ch-'+k); if(!body) return;
