@@ -490,8 +490,8 @@
         <button class="btn ghost small" style="margin-top:12px;" onclick="openModal('profile')">Edit Profile · Targets · PIN</button>
       </div>
 
-      <h2 class="section coll" onclick="toggleColl('history')">Workout History <span id="wh-count" style="color:var(--accent);font-weight:800;"></span> <span class="coll-ch" id="ch-history">▸</span></h2>
-      <div class="coll-body" id="coll-history" style="display:none;">
+      <h2 class="section coll" onclick="toggleColl('history')">Workout History <span id="wh-count" style="color:var(--accent);font-weight:800;"></span> <span class="coll-ch" id="ch-history">▾</span></h2>
+      <div class="coll-body" id="coll-history">
         <div id="profile-workouts"></div>
       </div>
 
@@ -520,8 +520,8 @@
             <div class="delta" id="w-delta"></div>
           </div>
           <div class="seg" id="w-viewsel" style="margin:8px 0 10px;">
-            <button class="on" data-wv="week" onclick="setWeightView('week')">Week</button>
-            <button data-wv="month" onclick="setWeightView('month')">Month</button>
+            <button data-wv="week" onclick="setWeightView('week')">Week</button>
+            <button class="on" data-wv="month" onclick="setWeightView('month')">Month</button>
             <button data-wv="year" onclick="setWeightView('year')">Year</button>
             <button data-wv="all" onclick="setWeightView('all')">All</button>
           </div>
@@ -1034,8 +1034,9 @@ function drawChart(w){
     w.map((v,i)=>`<circle cx="${X(i)}" cy="${Y(v)}" r="${i===w.length-1?4.5:2.5}" fill="${i===w.length-1?'#ccff00':'#555'}"/>`).join('');
 }
 
-let weightView = 'week'; // week | month | year | all
-function setWeightView(v){ weightView=v; renderWeightPanel(); }
+let weightView = 'month'; // week | month | year | all — month reads better than week for most people
+let weightViewTouched = false; // once they pick a range themselves, stop auto-widening
+function setWeightView(v){ weightView=v; weightViewTouched=true; renderWeightPanel(); }
 function weightRangeMs(v){ return v==='week'?7*864e5 : v==='month'?31*864e5 : v==='year'?366*864e5 : Infinity; }
 function weightsInView(all){
   if(weightView==='all') return all;
@@ -1050,6 +1051,13 @@ function renderWeightPanel(){
   if(!all.length){ $('w-now').textContent='—'; $('w-delta').textContent='no weigh-ins yet'; drawChart([]); renderWeightAxis([]); return; }
   const cur=all[all.length-1].w;
   $('w-now').textContent=cur.toFixed(1);
+  // never show an empty chart when weigh-ins exist: if they haven't picked a range
+  // themselves, widen until something is actually in view (blank chart was the #1 confusion)
+  if(!weightViewTouched && !weightsInView(all).length){
+    for(const v of ['month','year','all']){ weightView=v; if(weightsInView(all).length) break; }
+    const sel2=$('w-viewsel');
+    if(sel2) sel2.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.wv===weightView));
+  }
   const view=weightsInView(all);
   if(view.length>=2){
     const delta=view[view.length-1].w-view[0].w;
@@ -1988,14 +1996,14 @@ function renderProfileCard(){
   renderWeightPanel();
 }
 /* full training history on the Profile tab, grouped by month — the place to go
-   back and review your own workouts (Train's list is the recent/post-session view) */
-let historyAutoExpanded=false;
+   back and review your own workouts (Train's list is the recent/post-session view).
+   The section is OPEN by default in the markup so no render timing can leave it
+   stuck collapsed. */
 function renderWorkoutHistory(){
   const el=$('profile-workouts'); if(!el) return;
   const ws=S.workouts||[];
   const cnt=$('wh-count'); if(cnt) cnt.textContent = ws.length ? '· '+ws.length : '';
   if(!ws.length){ el.innerHTML='<div class="card"><div class="empty">No workouts logged yet. Go get one. 🏋️</div></div>'; return; }
-  if(!historyAutoExpanded){ historyAutoExpanded=true; expandColl('history'); } // make it findable on first open
   // group by month, keeping the REAL S.workouts index (reopenWorkout depends on it)
   const groups=[];
   ws.forEach((w,wi)=>{
