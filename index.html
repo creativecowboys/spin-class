@@ -321,6 +321,7 @@
   .wx-last{font-size:10.5px;color:var(--accent3);margin-top:-6px;margin-bottom:8px;}
   .histdetail{padding:4px 0 8px 52px;font-size:12px;color:var(--muted);line-height:1.7;display:none;}
   .histdetail.open{display:block;}
+  .item .hist-ch{color:var(--muted);font-size:11px;font-weight:900;flex-shrink:0;width:14px;text-align:right;}
   /* ---------- week calendar ---------- */
   .wknav{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
   .wknav b{font-size:13px;}
@@ -1491,21 +1492,23 @@ function saveCustomWorkout(){
 /* =============== cardio =============== */
 const CARDIO_TYPES = ['Treadmill','Running','Walking','Incline Walk','Cycling','Elliptical','Rowing','Stairmaster','Swimming','Jump Rope','Hiking','Zone 2 Cardio'];
 let cardioPick = null;
-function openCardio(iso){
-  cardioPick = {iso: iso||todayISO(), type:null};
+/* toActive: adds the cardio INTO the live workout (shows with the exercises)
+   instead of logging it as its own separate session */
+function openCardio(iso, toActive){
+  cardioPick = {iso: iso||todayISO(), type:null, toActive: !!(toActive && S.active)};
   renderCardio();
   $('modal').classList.add('open');
 }
 function renderCardio(){
   const c=cardioPick; if(!c) return;
-  $('sheet').innerHTML = `<h3>Log Cardio</h3>
+  $('sheet').innerHTML = `<h3>${c.toActive?'Add Cardio to This Session':'Log Cardio'}</h3>
     <div class="field" style="margin-bottom:6px;"><label>What kind?</label></div>
     <div class="cardio-grid">${CARDIO_TYPES.map(t=>`<button type="button" class="${c.type===t?'on':''}" onclick="selectCardio('${t}')">${t}</button>`).join('')}</div>
     <div class="fieldrow" style="margin-top:14px;">
       <div class="field"><label>Duration (min)</label><input id="f-cardio-dur" type="number" placeholder="30"></div>
-      <div class="field"><label>Date</label><input id="f-cardio-date" type="date" value="${c.iso}"></div>
+      ${c.toActive?'':`<div class="field"><label>Date</label><input id="f-cardio-date" type="date" value="${c.iso}"></div>`}
     </div>
-    <button class="btn" onclick="saveCardio()">Log Cardio</button>`;
+    <button class="btn" onclick="saveCardio()">${c.toActive?'Add to Session':'Log Cardio'}</button>`;
 }
 function selectCardio(t){ cardioPick.type=t; renderCardio(); }
 function saveCardio(){
@@ -1513,13 +1516,25 @@ function saveCardio(){
   if(!c.type) return toast('Pick a cardio type');
   const dur=+$('f-cardio-dur').value||0;
   if(!dur) return toast('Enter the minutes');
-  const date=$('f-cardio-date').value||todayISO();
+  if(c.toActive && S.active){
+    // becomes part of the live workout so you can see it was applied
+    S.active.ex.push({name:'Cardio · '+c.type, target:dur+' min', rest:'—', cardio:true, sets:[{w:'', r:dur, done:true}]});
+    cardioPick=null;
+    store.save(); closeModal(); renderActive(); toast(c.type+' added to this session ✓');
+    return;
+  }
+  const date=($('f-cardio-date')||{}).value||todayISO();
   const when = date===todayISO() ? stamp() : dateStr(new Date(date+'T12:00:00'));
   S.workouts.unshift({type:'Cardio · '+c.type, dur, emoji:'🏃', when, date, cardio:true});
   S.workouts.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   S.streak += 1;
   cardioPick=null;
   store.save(); closeModal(); renderAll(); toast(c.type+' logged ✓');
+}
+function delActiveEx(xi){
+  if(!S.active || !S.active.ex[xi]) return;
+  S.active.ex.splice(xi,1);
+  store.save(); renderActive();
 }
 let openDay = null;
 function renderProgram(){
@@ -1564,15 +1579,25 @@ function logSession(i){
 function workoutItemHtml(w, wi, prefix){
   const extra = w.vol ? ` · ${w.setsDone} sets · ${w.vol.toLocaleString()} lb` : '';
   const id = prefix+'-'+wi;
-  const detail = `<div class="histdetail" id="${id}">`+
-    (w.detail ? w.detail.map(d=>`<b style="color:var(--text)">${esc(d.name)}</b>: ${d.sets.map(s=>isTimed(d.name)?(s.r+'s'+(s.w?' · '+s.w+'lb':'')):(s.w+'×'+s.r)).join(', ')}`).join('<br>') : '<span>No set detail logged.</span>')+
-    `<br><button class="btn ghost small" style="margin-top:8px;" onclick="event.stopPropagation();reopenWorkout(${wi})">✎ Add / Edit Sets</button>`+
-    `</div>`;
-  return `<div class="item" onclick="document.getElementById('${id}').classList.toggle('open')" style="cursor:pointer;">
+  const body = (w.detail && w.detail.length)
+    ? w.detail.map(d=>`<b style="color:var(--text)">${esc(d.name)}</b>: ${d.sets.map(s=>isCardioName(d.name)?(s.r+' min'):isTimed(d.name)?(s.r+'s'+(s.w?' · '+s.w+'lb':'')):(s.w+'×'+s.r)).join(', ')}`).join('<br>')
+    : '<span>No exercises were logged for this one — tap below to add them.</span>';
+  return `<div class="item" onclick="toggleHist('${id}')" style="cursor:pointer;">
     <div class="emoji">${w.emoji}</div>
     <div class="info"><b>${esc(w.type)}</b><small>${w.when}${extra}</small></div>
     <div class="val">${w.dur}<small>MIN</small></div>
-  </div>${detail}`;
+    <div class="hist-ch" id="${id}-c">▸</div>
+  </div>
+  <div class="histdetail" id="${id}">${body}
+    <br><button class="btn ghost small" style="margin-top:8px;" onclick="event.stopPropagation();reopenWorkout(${wi})">✎ Add / Edit Sets</button>
+  </div>`;
+}
+/* explicit toggle so every tap gives visible feedback (the chevron flips) even
+   when the session has no set detail to show */
+function toggleHist(id){
+  const d=document.getElementById(id); if(!d) return;
+  const open=d.classList.toggle('open');
+  const c=document.getElementById(id+'-c'); if(c) c.textContent = open?'▾':'▸';
 }
 
 /* a workout started on an earlier calendar day is "stale" — it shouldn't hijack
@@ -1665,9 +1690,14 @@ function reopenWorkout(wi){
       sets: d ? d.sets.map(s=>({w:s.w, r:s.r, done:true})) : Array.from({length:parseInt(e[1])||3},()=>({w:'',r:'',done:false}))});
   });
   (w.detail||[]).forEach(d=>{
-    if(!exs.find(x=>x.name===d.name))
-      exs.push({name:d.name, target:'3 × 8–12', rest:'90 s', big:false, lastW:last[d.name]||'',
+    if(exs.find(x=>x.name===d.name)) return;
+    if(isCardioName(d.name)){ // keep cardio as cardio when re-opening a session
+      exs.push({name:d.name, target:((d.sets[0]||{}).r||0)+' min', rest:'—', cardio:true,
         sets:d.sets.map(s=>({w:s.w, r:s.r, done:true}))});
+      return;
+    }
+    exs.push({name:d.name, target:'3 × 8–12', rest:'90 s', big:false, lastW:last[d.name]||'',
+      sets:d.sets.map(s=>({w:s.w, r:s.r, done:true}))});
   });
   S.active = {ref: (w.day!=null?w.day:0), name: w.type, started: Date.now(), editIdx: wi, ex: exs};
   store.save(); go('train'); renderTrain(); $('main').scrollTop=0;
@@ -1677,6 +1707,7 @@ function reopenWorkout(wi){
 /* =============== live workout =============== */
 /* time-based holds log weight + seconds instead of weight × reps */
 function isTimed(name){ return /\bplank\b|wall sit|dead hang|hollow (body )?hold|l-sit|\bcarry\b|farmer'?s/i.test(name||''); }
+function isCardioName(name){ return /^Cardio · /i.test(name||''); }
 /* past sessions of a given exercise, newest first (from logged workout detail) */
 function exerciseHistory(name){
   const out=[];
@@ -1733,6 +1764,16 @@ function renderActive(){
     </div>
     <h2 class="section">Exercises</h2>` +
     a.ex.map((x,xi)=>{
+      // cardio logged into this session shows as its own block — no weight/reps rows
+      if(x.cardio){
+        return `<div class="wx complete">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <div class="wx-name">${esc(x.name)} ✓</div>
+            <button class="swapbtn" onclick="delActiveEx(${xi})">✕ remove</button>
+          </div>
+          <div class="wx-meta">${x.sets[0]?x.sets[0].r:0} min · part of this session</div>
+        </div>`;
+      }
       const complete = x.sets.length && x.sets.every(s=>s.done);
       const ref = histRef(x); // past session whose numbers fill the fields (placeholders)
       const refLbl = ref ? (ref.session.date ? new Date(ref.session.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : (ref.session.when||'')) : null;
@@ -1740,7 +1781,7 @@ function renderActive(){
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
           <div class="wx-name${x.big?' big':''}">${esc(x.name)} ${complete?'✓':''}</div>
           <div style="display:flex;gap:6px;flex-shrink:0;">
-            ${ref?`<button class="swapbtn" onclick="cycleHist(${xi})">↺ past</button>`:''}
+            ${(ref && ref.count>1)?`<button class="swapbtn" onclick="cycleHist(${xi})">↺ past</button>`:''}
             <button class="swapbtn" onclick="openPicker('swap',${xi})">⇄ swap</button>
           </div>
         </div>
@@ -1762,7 +1803,12 @@ function renderActive(){
       </div>`;
     }).join('') +
     `<button class="btn ghost" style="margin-bottom:10px;" onclick="openPicker('add')">+ Add Exercise from Library</button>`+
-    `<button class="btn ghost" style="margin-bottom:10px;" onclick="openCardio(todayISO())">🏃 Add Cardio to This Session</button>`;
+    `<button class="btn ghost" style="margin-bottom:10px;" onclick="openCardio(todayISO(), true)">Add Cardio to This Session</button>`+
+    // same actions as the header, so you don't have to scroll back up to finish
+    `<div class="wo-actions" style="margin-top:4px;">
+       <button class="btn" onclick="finishWorkout()">${editing?'Save Changes':'Finish'}</button>
+       <button class="btn ghost" onclick="cancelWorkout()">${editing?'Cancel':'Discard'}</button>
+     </div>`;
   tickElapsed();
 }
 
@@ -1857,8 +1903,8 @@ function finishWorkout(){
     const logged = x.sets.filter(s=>s.done && (s.w||s.r));
     if(logged.length){
       detail.push({name:x.name, sets:logged.map(s=>({w:+s.w||0, r:+s.r||0}))});
-      if(!isTimed(x.name)) logged.forEach(s=>{ vol += (+s.w||0)*(+s.r||0); });
-      setsDone += logged.length;
+      if(!isTimed(x.name) && !x.cardio) logged.forEach(s=>{ vol += (+s.w||0)*(+s.r||0); });
+      if(!x.cardio) setsDone += logged.length; // cardio rides along but isn't a "set"
       const lastW = logged[logged.length-1].w;
       if(+lastW) S.lastLifts[x.name] = +lastW;
     }
@@ -1871,10 +1917,17 @@ function finishWorkout(){
     toast('Workout updated — '+setsDone+' sets, '+vol.toLocaleString()+' lb ✓');
     return;
   }
-  S.workouts.unshift({type:a.name, day:a.ref, dur, emoji:'🏋️', when:stamp(), date:todayISO(), vol, setsDone, detail});
+  // credit the session to the day it STARTED — finishing the next morning shouldn't
+  // move yesterday's workout onto today
+  const startedAt = new Date(a.started);
+  const startISO = isoOf(startedAt);
+  const when = startISO===todayISO() ? stamp()
+    : dateStr(startedAt)+' · '+fmtTime(startedAt.getHours(), startedAt.getMinutes());
+  S.workouts.unshift({type:a.name, day:a.ref, dur, emoji:'🏋️', when, date:startISO, vol, setsDone, detail});
+  S.workouts.sort((x,y)=>(y.date||'').localeCompare(x.date||'')); // keep newest-first when back-dated
   S.streak += 1;
   S.lastDone = S.lastDone || {};
-  S.lastDone[a.ref] = dateStr();
+  S.lastDone[a.ref] = dateStr(startedAt);
   if(typeof a.ref==='number' && (S.programDay||0)===a.ref) S.programDay = (a.ref+1)%7;
   openDay = -1;
   S.active = null;
