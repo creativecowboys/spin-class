@@ -405,7 +405,7 @@
         </div>
       </div>
 
-      <div class="dosealert" id="dosealert" onclick="go('profile')" style="display:none;">
+      <div class="dosealert" id="dosealert" onclick="openDoseSheet()" style="display:none;">
         <div class="dot"></div>
         <div><b id="dosealert-title">Dose due</b><small id="dosealert-sub"></small></div>
       </div>
@@ -1983,6 +1983,29 @@ function toggleDose(i){
   store.save(); renderStack(); renderHome();
   if(it.takenOn[iso]) toast(it.name+' logged ✓');
 }
+/* tapping the home dose alert used to dump you at the TOP of Profile, with the
+   Stack far below the fold — check today's doses off right here instead */
+function openDoseSheet(){
+  const iso=todayISO(), day=todayDOW();
+  const now=new Date(), nmin=now.getHours()*60+now.getMinutes();
+  const rows=S.stack.map((it,idx)=>({it,idx})).filter(x=>itemDays(x.it).includes(day))
+    .sort((a,b)=>(a.it.hour*60+a.it.min)-(b.it.hour*60+b.it.min));
+  const left=rows.filter(({it})=>!(it.takenOn && it.takenOn[iso])).length;
+  $('sheet').innerHTML = `<h3>Today's Stack</h3>
+    <div class="tagline" style="margin:-4px 0 10px;">${rows.length ? (left?left+' left to take — tap the ✓ to log it.':'All done for today. Nice. ✓') : 'Nothing scheduled today.'}</div>`
+    + (rows.length ? rows.map(({it,idx})=>{
+        const taken = !!(it.takenOn && it.takenOn[iso]);
+        const overdue = !taken && (it.hour*60+it.min)<nmin;
+        return `<div class="dose${overdue?' overdue':''}">
+          <div class="time"><b>${fmtTime(it.hour,it.min).split(' ')[0]}</b><small>${fmtTime(it.hour,it.min).split(' ')[1]}</small></div>
+          <div class="info"><b>${esc(it.name)}</b><small>${esc(it.dose)}${overdue?' · <span style="color:var(--accent2)">overdue</span>':''}</small></div>
+          <div class="check${taken?' done':''}" onclick="toggleDoseSheet(${idx})">✓</div>
+        </div>`;
+      }).join('') : '')
+    + `<button class="btn ghost" style="margin-top:14px;" onclick="closeModal();go('profile');setTimeout(()=>{const s=document.getElementById('stack-days'); if(s) s.scrollIntoView({behavior:'smooth',block:'center'});},80)">Manage my stack</button>`;
+  $('modal').classList.add('open');
+}
+function toggleDoseSheet(i){ toggleDose(i); openDoseSheet(); } // re-render the sheet in place
 
 function renderProfileCard(){
   const p = P();
