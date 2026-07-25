@@ -47,7 +47,8 @@ export default async function handler(req, res) {
       group: p.group || '',
           streak: st.streak || 0,
           lastActive: d.doc.updated || 0,
-          workouts: (st.workouts || []).slice(0, 8).map(w => ({
+          // 30 (not 8) so the app's 7-day leaderboard count can't be truncated
+          workouts: (st.workouts || []).slice(0, 30).map(w => ({
             type: String(w.type || 'Workout').replace(/^Day \d+ — /, ''), dur: w.dur || 0, sets: w.setsDone || 0,
             vol: w.vol || 0, when: w.when || '', date: w.date || ''
           }))

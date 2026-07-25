@@ -174,6 +174,10 @@
     padding:14px 16px;margin:14px 0 0;color:var(--text);}
   .section.coll:active{background:var(--surface2);}
   .coll-ch{color:var(--accent);font-size:15px;font-weight:900;letter-spacing:0;}
+  /* "attached" collapsible: header + body read as ONE panel instead of two floating cards */
+  .coll-att.open{border-radius:12px 12px 0 0;border-bottom-color:transparent;}
+  .coll-att-body{background:var(--surface);border:1px solid var(--border);border-top:none;
+    border-radius:0 0 12px 12px;padding:2px 14px 12px;}
   .ba{display:flex;gap:10px;margin-bottom:12px;}
   .ba-col{flex:1;text-align:center;}
   .ba-lbl{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
@@ -262,6 +266,13 @@
   .tw-dot.today{outline:1px solid rgba(204,255,0,.5);outline-offset:1px;}
   .tw-streak{font-size:12px;font-weight:800;width:36px;text-align:right;flex:none;}
   .tw-more{color:var(--muted);font-size:11.5px;text-align:center;padding-top:10px;}
+  /* 7-day leaderboard: place badge + "this is you" highlight */
+  .tw-rank{width:22px;flex:none;text-align:center;font-size:12px;font-weight:900;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .tw-rank.top{font-size:15px;}
+  .tw-row.me{background:rgba(204,255,0,.07);border-left:3px solid var(--accent);border-radius:8px;padding-left:7px;padding-right:7px;}
+  .tw-row.me .tw-info b{color:var(--accent);}
+  .feed-item.me{border-color:var(--accent);background:rgba(204,255,0,.06);}
+  .feed-item.me .info b{color:var(--accent);}
   .feed-item{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px;}
   .feed-item .info{flex:1;min-width:0;}
   .feed-item .info b{font-size:13.5px;}
@@ -490,8 +501,8 @@
         <button class="btn ghost small" style="margin-top:12px;" onclick="openModal('profile')">Edit Profile · Targets · PIN</button>
       </div>
 
-      <h2 class="section coll" onclick="toggleColl('history')">Workout History <span id="wh-count" style="color:var(--accent);font-weight:800;"></span> <span class="coll-ch" id="ch-history">▾</span></h2>
-      <div class="coll-body" id="coll-history">
+      <h2 class="section coll coll-att open" onclick="toggleColl('history')">Workout History <span id="wh-count" style="color:var(--accent);font-weight:800;"></span> <span class="coll-ch" id="ch-history">▾</span></h2>
+      <div class="coll-body coll-att-body" id="coll-history">
         <div id="profile-workouts"></div>
       </div>
 
@@ -1129,6 +1140,28 @@ function teamWeekISO(){
   return Array.from({length:7},(_,i)=>{ const x=new Date(mon); x.setDate(mon.getDate()+i);
     return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); });
 }
+/* ---- 7-day leaderboard: most workouts in the last 7 days wins ---- */
+function last7Set(){
+  const s=new Set(), d=new Date();
+  for(let i=0;i<7;i++){ const x=new Date(d); x.setDate(d.getDate()-i); s.add(isoOf(x)); }
+  return s;
+}
+function last7Count(m, days){ return (m.workouts||[]).filter(w=>days.has(w.date)).length; }
+/* rank members by 7-day count (ties broken by most recent activity) and stamp a
+   competition rank — ties share a place, e.g. 1,2,2,4 */
+function rankedMembers(){
+  const days=last7Set();
+  const list=[...effectiveMembers()]
+    .map(m=>({...m, wk:last7Count(m,days)}))
+    .sort((a,b)=> b.wk-a.wk || b.lastActive-a.lastActive);
+  let lastWk=null, lastRank=0;
+  list.forEach((m,i)=>{ if(m.wk!==lastWk){ lastRank=i+1; lastWk=m.wk; } m.rank=lastRank; });
+  return list;
+}
+function rankBadge(m){
+  const medal = m.wk>0 ? ({1:'🥇',2:'🥈',3:'🥉'})[m.rank] : null;
+  return `<div class="tw-rank${m.rank<=3&&m.wk>0?' top':''}">${medal||(m.wk>0?m.rank:'–')}</div>`;
+}
 /* the current user's own row uses LOCAL workouts/streak so their training
    shows instantly, before the server round-trip; everyone else from COMM */
 function effectiveMembers(){
@@ -1146,15 +1179,15 @@ function renderTeamWeek(){
   const el = $('team-week'); if(!el) return;
   if(!COMM || !COMM.members || !COMM.members.length){ el.innerHTML='<div class="empty">No crew activity yet.</div>'; return; }
   const wk = teamWeekISO(), today = todayISO();
-  el.innerHTML = [...effectiveMembers()].sort((a,b)=>b.lastActive-a.lastActive).map(m=>{
+  el.innerHTML = rankedMembers().map(m=>{
     const days = new Set(m.workouts.map(w=>w.date));
     const hot = days.has(today);
+    const me = m.key===COMM.you;
     const dots = wk.map(d=>`<i class="tw-dot${days.has(d)?' on':''}${d===today?' today':''}"></i>`).join('');
-    const todaysWo = m.workouts.find(w=>w.date===today);
-    const sub = hot ? 'today: '+esc((todaysWo&&todaysWo.type)||'trained') : (m.workouts[0] ? 'last: '+esc(m.workouts[0].type) : 'no workouts yet');
-    return `<div class="tw-row${hot?' hot':''}">
+    return `<div class="tw-row${hot?' hot':''}${me?' me':''}">
+      ${rankBadge(m)}
       <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
-      <div class="tw-info"><b>${esc(m.name)}${m.key===COMM.you?' <small>(you)</small>':''}</b><small>${sub}</small></div>
+      <div class="tw-info"><b>${esc(m.name)}${me?' <small>(you)</small>':''}</b><small>${m.wk} workout${m.wk===1?'':'s'} this week</small></div>
       <div class="tw-dots">${dots}</div>
     </div>`;
   }).join('') + '<div class="tw-more">See the full feed →</div>';
@@ -1162,17 +1195,21 @@ function renderTeamWeek(){
 function renderTeamFeed(){
   const el = $('team-feed'); if(!el) return;
   if(!COMM){ el.innerHTML='<div class="empty">Can\'t reach the crew right now.</div>'; return; }
-  const mem = [...effectiveMembers()].sort((a,b)=>b.lastActive-a.lastActive);
-  const html = mem.map(m=>{
-    if(!m.workouts.length) return `<div class="feed-item" style="opacity:.65;">
+  const html = rankedMembers().map(m=>{
+    const me = m.key===COMM.you;
+    const who = `<b>${esc(m.name)}${me?' <small style="color:var(--muted)">(you)</small>':''}</b>`;
+    const wkTag = `<span style="color:var(--accent3)">${m.wk} this week</span>`;
+    if(!m.workouts.length) return `<div class="feed-item${me?' me':''}" style="opacity:.7;">
+      ${rankBadge(m)}
       <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
-      <div class="info"><b>${esc(m.name)}${m.key===COMM.you?' <small style="color:var(--muted)">(you)</small>':''}</b><small>no workouts logged yet</small></div>
+      <div class="info">${who}<small>no workouts logged yet</small></div>
     </div>`;
     const w=[...m.workouts].sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
     const stats=[w.dur?w.dur+' min':'',w.sets?w.sets+' sets':'',w.vol?w.vol.toLocaleString()+' lb':''].filter(Boolean).join(' · ');
-    return `<div class="feed-item">
+    return `<div class="feed-item${me?' me':''}">
+      ${rankBadge(m)}
       <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
-      <div class="info"><b>${esc(m.name)}${m.key===COMM.you?' <small style="color:var(--muted)">(you)</small>':''}</b><small><b class="wtype">${esc(w.type)}</b>${stats?' · '+esc(stats):''}${w.when?' · '+esc(w.when):''}</small></div>
+      <div class="info">${who}<small>${wkTag} · <b class="wtype">${esc(w.type)}</b>${stats?' · '+esc(stats):''}${w.when?' · '+esc(w.when):''}</small></div>
     </div>`;
   }).join('');
   el.innerHTML = html || '<div class="empty">Nobody\'s trained yet. Someone go first.</div>';
@@ -1286,12 +1323,19 @@ function renderMeals(){
     : new Date(iso+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
   const el = $('meal-list');
   const rows = S.meals.map((m,idx)=>({m,idx})).filter(x=>mealDayOf(x.m)===iso);
+  // tap a meal to edit it, swipe it left to reveal Delete
   el.innerHTML = rows.length ? rows.map(({m,idx})=>`
-    <div class="item" onclick="openModal('meal',${idx})" style="cursor:pointer;">
-      <div class="emoji">${m.emoji||'🍽'}</div>
-      <div class="info"><b>${esc(m.name)}</b><small>${esc(m.time||'')}</small></div>
-      <div class="val">${m.cal}<small>KCAL · ${m.pro}P · ${m.carb||0}C · ${m.fat||0}F</small></div>
-    </div>`).join('') : '<div class="empty">Nothing logged. Fuel up. 🍳</div>';
+    <div class="cw-item">
+      <div class="cw-del" onclick="event.stopPropagation();deleteMeal(${idx})">Delete</div>
+      <div class="cw-face item" onclick="openModal('meal',${idx})" style="cursor:pointer;background:var(--surface);">
+        <div class="emoji">${m.emoji||'🍽'}</div>
+        <div class="info"><b>${esc(m.name)}</b><small>${esc(m.time||'')}</small></div>
+        <div class="val">${m.cal}<small>KCAL · ${m.pro}P · ${m.carb||0}C · ${m.fat||0}F</small></div>
+      </div>
+    </div>`).join('')
+    + '<div class="tagline" style="margin:8px 4px 0;">Tap a meal to edit it · swipe left to delete</div>'
+    : '<div class="empty">Nothing logged. Fuel up. 🍳</div>';
+  setTimeout(wireSwipe, 30);
 }
 function waterToday(iso){ return (S.waterLog && S.waterLog[iso]) || 0; }
 function logWater(oz){
@@ -1420,16 +1464,17 @@ function openDayAssign(iso){
 function wireSwipe(){
   document.querySelectorAll('.cw-item .cw-face').forEach(face=>{
     if(face._wired) return; face._wired=true;
-    let x0=null, open=false, moved=false;
-    const setX=px=>{ face.style.transform='translateX('+px+'px)'; };
+    // track the offset in a variable — reading it back off computed style was
+    // flaky and let the row snap shut instead of staying open
+    let x0=null, open=false, moved=false, at=0;
+    const setX=px=>{ at=px; face.style.transform='translateX('+px+'px)'; };
     face.addEventListener('pointerdown', e=>{ x0=e.clientX; moved=false; face.style.transition='none'; });
     face.addEventListener('pointermove', e=>{
       if(x0==null) return;
       let dx=e.clientX-x0; if(Math.abs(dx)>6) moved=true;
-      dx=Math.max(-84, Math.min(0, dx + (open?-84:0)));
-      setX(dx);
+      setX(Math.max(-84, Math.min(0, dx + (open?-84:0))));
     });
-    const end=()=>{ if(x0==null) return; face.style.transition=''; const m=new WebKitCSSMatrix(getComputedStyle(face).transform); open = m.m41 < -42; setX(open?-84:0); x0=null; };
+    const end=()=>{ if(x0==null) return; face.style.transition=''; open = at < -42; setX(open?-84:0); x0=null; };
     face.addEventListener('pointerup', end);
     face.addEventListener('pointercancel', end);
     // block the assign tap if the user was swiping
@@ -1539,10 +1584,15 @@ function saveCardio(){
   cardioPick=null;
   store.save(); closeModal(); renderAll(); toast(c.type+' logged ✓');
 }
+/* pull a whole exercise out of the live workout. Cardio is one-tap (trivial to
+   re-add); a real exercise confirms first if it already has logged sets. */
 function delActiveEx(xi){
-  if(!S.active || !S.active.ex[xi]) return;
+  const ex = S.active && S.active.ex[xi]; if(!ex) return;
+  const logged = (ex.sets||[]).filter(s=>s.done && (s.w||s.r)).length;
+  if(!ex.cardio && logged && !confirm('Remove '+ex.name+' from this workout?\n\n'+logged+' logged set'+(logged===1?'':'s')+' will be lost.')) return;
   S.active.ex.splice(xi,1);
   store.save(); renderActive();
+  toast(ex.name+' removed');
 }
 let openDay = null;
 function renderProgram(){
@@ -1791,6 +1841,7 @@ function renderActive(){
           <div style="display:flex;gap:6px;flex-shrink:0;">
             ${(ref && ref.count>1)?`<button class="swapbtn" onclick="cycleHist(${xi})">↺ past</button>`:''}
             <button class="swapbtn" onclick="openPicker('swap',${xi})">⇄ swap</button>
+            <button class="swapbtn" title="Remove this exercise" onclick="delActiveEx(${xi})">✕</button>
           </div>
         </div>
         <div class="wx-meta">Target ${x.target} · Rest ${x.rest}</div>
@@ -2026,7 +2077,7 @@ function renderWorkoutHistory(){
   const el=$('profile-workouts'); if(!el) return;
   const ws=S.workouts||[];
   const cnt=$('wh-count'); if(cnt) cnt.textContent = ws.length ? '· '+ws.length : '';
-  if(!ws.length){ el.innerHTML='<div class="card"><div class="empty">No workouts logged yet. Go get one. 🏋️</div></div>'; return; }
+  if(!ws.length){ el.innerHTML='<div class="empty" style="padding:14px 4px;">No workouts logged yet. Go get one. 🏋️</div>'; return; }
   // group by month, keeping the REAL S.workouts index (reopenWorkout depends on it)
   const groups=[];
   ws.forEach((w,wi)=>{
@@ -2037,17 +2088,25 @@ function renderWorkoutHistory(){
   });
   el.innerHTML = groups.map(g=>{
     const vol=g.items.reduce((t,x)=>t+(x.w.vol||0),0);
-    return `<div class="wh-month"><b>${esc(g.key)}</b><span>${g.items.length} session${g.items.length===1?'':'s'}${vol?' · '+vol.toLocaleString()+' lb':''}</span></div>
-      <div class="card">${g.items.map(({w,wi})=>workoutItemHtml(w,wi,'pw')).join('')}</div>`;
+    // no inner .card — rows live directly inside the attached panel so the whole
+    // section reads as one piece with its header
+    return `<div class="wh-month"><b>${esc(g.key)}</b><span>${g.items.length} session${g.items.length===1?'':'s'}${vol?' · '+vol.toLocaleString()+' lb':''}</span></div>`
+      + g.items.map(({w,wi})=>workoutItemHtml(w,wi,'pw')).join('');
   }).join('');
 }
+function collHeader(k){ const ch=$('ch-'+k); return ch ? ch.closest('.section.coll') : null; }
 function toggleColl(k){
   const body=$('coll-'+k), ch=$('ch-'+k); if(!body) return;
   const open = body.style.display==='none';
   body.style.display = open?'':'none';
   if(ch) ch.textContent = open?'▾':'▸';
+  const hdr=collHeader(k); if(hdr) hdr.classList.toggle('open', open); // keeps the attached panel seamless
 }
-function expandColl(k){ const body=$('coll-'+k), ch=$('ch-'+k); if(!body) return; body.style.display=''; if(ch) ch.textContent='▾'; }
+function expandColl(k){
+  const body=$('coll-'+k), ch=$('ch-'+k); if(!body) return;
+  body.style.display=''; if(ch) ch.textContent='▾';
+  const hdr=collHeader(k); if(hdr) hdr.classList.add('open');
+}
 
 /* =============== progress photos =============== */
 function fmtPhotoDate(p){ const d=new Date((p.date||todayISO())+'T12:00:00'); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
