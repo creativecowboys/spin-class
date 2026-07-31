@@ -2,6 +2,10 @@ import { put, del } from '@vercel/blob';
 
 // Progress photos: image bytes live in the blob store; the app keeps only
 // {url, date} in member state so the synced state stays small.
+// Uploading a full-size photo on a phone connection can exceed the platform's
+// 10s default, which surfaced as a photo that "saved" but never appeared.
+export const maxDuration = 60;
+
 export default async function handler(req, res) {
   try {
     if (req.method === 'POST') {

@@ -1,3 +1,8 @@
+// A coach reply with real chat history routinely takes 8-12s to generate; the
+// platform default (10s) was killing those requests mid-flight and members got
+// the canned "can't reach coach HQ" fallback.
+export const maxDuration = 60;
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const key = process.env.ANTHROPIC_API_KEY;

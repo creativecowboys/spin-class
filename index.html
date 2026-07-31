@@ -2466,7 +2466,7 @@ function coachReply(q){
   }
   if(t.includes('how am i')||t.includes('doing')||t.includes('progress')||t.includes('weight'))
     return `Strong week, ${esc(p.name)}. Weight's moved <b>${delta} lbs</b> (now ${cur.toFixed(1)}${p.goalWeight?', goal '+p.goalWeight:''}), you're at <b>${cal}/${p.calTarget} kcal</b> and <b>${pro}/${p.proTarget}g protein</b> today, and the streak is <b>${S.streak} days</b>. ${proLeft>60?'Protein is the one lagging — attack it at dinner.':'Keep doing exactly this.'}`;
-  return `Can't reach coach HQ right now, so you're getting the canned version of me. What I can tell you: you're at <b>${cal} kcal</b> today and the streak is <b>${S.streak}</b>. Ask about dinner, your stack, or tomorrow's session — or try again in a minute for the real answers.`;
+  return `That one didn't get through — send it again and I'll pick it right up. Meanwhile: you're at <b>${cal} kcal</b> today and the streak is <b>${S.streak}</b>.`;
 }
 
 function ask(q){ $('chat-in').value=q; send(); }
@@ -2571,6 +2571,24 @@ function buildContext(){
     stackTakenToday: S.stack.filter(x=>itemDays(x).includes(todayDOW()) && x.takenOn && x.takenOn[todayISO()]).map(d=>d.name)
   });
 }
+/* One retry before giving up: a coach reply takes ~8-12s, so an occasional
+   slow/dropped request shouldn't dump the member into the canned fallback. */
+async function askCoach(messages, tries){
+  tries = tries || 2;
+  for(let i=0;i<tries;i++){
+    try{
+      const r = await fetch('/api/chat', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({messages, context: buildContext()})
+      });
+      const data = await r.json().catch(()=>({}));
+      if(r.ok && data.text) return data.text;
+      console.warn('coach error', r.status, data.error||'');
+    }catch(e){ console.warn('coach request failed', e); }
+    if(i < tries-1) await new Promise(res=>setTimeout(res, 800));
+  }
+  return null;
+}
 async function send(){
   const inp=$('chat-in'); const q=inp.value.trim(); if(!q) return;
   inp.value='';
@@ -2579,16 +2597,7 @@ async function send(){
   msgs.scrollTop=msgs.scrollHeight;
   chatHist.push({role:'user', content:q});
   $('typing').classList.add('on');
-  let reply = null;
-  try{
-    const r = await fetch('/api/chat', {
-      method:'POST',
-      headers:{'content-type':'application/json'},
-      body: JSON.stringify({messages: chatHist, context: buildContext()})
-    });
-    const data = await r.json();
-    if(r.ok && data.text) reply = data.text;
-  }catch(e){ /* offline or not configured — fall back to mock */ }
+  const reply = await askCoach(chatHist);
   $('typing').classList.remove('on');
   if(reply){
     chatHist.push({role:'assistant', content:reply});
