@@ -51,7 +51,10 @@ ${context}`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 600,
+        // 600 was too tight: a detailed answer (e.g. "plan my whole day and
+        // explain each meal") burned the whole budget and came back with NO
+        // text block, which the app read as a failure and answered canned.
+        max_tokens: 2000,
         system,
         messages: messages.slice(-20)
       })
@@ -60,7 +63,10 @@ ${context}`;
     if (!r.ok || data.error) {
       return res.status(502).json({ error: (data.error && data.error.message) || 'Upstream error' });
     }
-    const text = (data.content || []).map(b => b.text || '').join('');
+    const text = (data.content || []).filter(b => b && b.type === 'text').map(b => b.text || '').join('').trim();
+    // never hand back an empty 200 — the client can't tell that from a real
+    // answer, so surface it as an error and let it retry
+    if (!text) return res.status(502).json({ error: 'empty response (stop_reason: ' + (data.stop_reason || 'unknown') + ')' });
     return res.status(200).json({ text });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
