@@ -44,7 +44,10 @@ export default async function handler(req, res) {
         return res.status(pinBlocked ? 403 : 404).json({ error: pinBlocked ? 'wrong pin' : 'not found' });
       }
       matches.sort((a, b) => b.updated - a.updated);
-      return res.status(200).json({ matches });
+      // pinBlocked: a same-name PIN-protected account was excluded by the entered PIN.
+      // The client uses it to avoid silently adopting a claimable duplicate when the
+      // member probably just mistyped the PIN of their real account.
+      return res.status(200).json({ matches, pinBlocked });
     }
     if (req.method === 'GET') {
       const id = String(req.query.id || '').replace(/[^a-f0-9]/gi, '');

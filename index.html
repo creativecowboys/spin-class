@@ -2723,9 +2723,16 @@ async function restoreAccount(){
     if(!r || r.status===404) return toast('No account found under "'+name+'"');
     if(r.status===403) return toast('Wrong PIN — ask Dave if you\'re stuck');
     if(!r.ok) return toast('Hmm, something broke — try again');
-    const ms = ((await r.json()).matches)||[];
-    if(ms.length===1) return adoptAccount(ms[0].id);
-    $('r-picks').innerHTML = '<div class="ob-sub" style="margin:14px 0 8px;">Found more than one — which is you?</div>'+
+    const data = await r.json();
+    const ms = data.matches||[];
+    // pinBlocked = a "${name}" locked with a DIFFERENT PIN also exists. Don't silently
+    // drop them into a claimable (no-PIN) duplicate — that reads as "logged in fine,
+    // but all my data is gone". Make them look at what they're claiming.
+    if(ms.length===1 && !data.pinBlocked) return adoptAccount(ms[0].id);
+    const warn = data.pinBlocked
+      ? `<div class="ob-sub" style="margin:14px 0 0;color:var(--accent2);">Heads up — there's also a “${esc(name)}” locked with a different PIN. If the account below doesn't look like yours (check the workout count), your PIN is probably off — ask Dave.</div>`
+      : '';
+    $('r-picks').innerHTML = warn + '<div class="ob-sub" style="margin:14px 0 8px;">'+(ms.length===1?'Is this you?':'Found more than one — which is you?')+'</div>'+
       ms.map(m=>`<button class="btn ghost" style="margin-bottom:8px;" onclick="adoptAccount('${m.id}')">${m.workouts} workout${m.workouts===1?'':'s'} · last active ${m.updated?new Date(m.updated).toLocaleDateString():'—'}</button>`).join('');
   } finally { btn.disabled=false; btn.textContent='Get My Data Back'; }
 }
@@ -2754,7 +2761,11 @@ async function finishOnboard(toCoach){
       obGo('r'); $('r-name').value=name; return;
     }
     if(r.ok){
-      const ms=(await r.json()).matches||[];
+      const d=await r.json(); const ms=d.matches||[];
+      if(ms.length && d.pinBlocked){ // claimable duplicate + a PIN-locked twin → make them log in, don't guess
+        toast('There’s already a "'+name+'". Log back in with your PIN.');
+        obGo('r'); $('r-name').value=name; return;
+      }
       if(ms.length) return adoptAccount(ms[0].id); // no PIN → just reconnect
     }
   }catch(e){ /* offline / lookup failed — fall through and create */ }
