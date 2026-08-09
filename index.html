@@ -264,6 +264,11 @@
   .tw-dot{width:7px;height:7px;border-radius:50%;background:var(--border);display:block;}
   .tw-dot.on{background:var(--accent);}
   .tw-dot.today{outline:1px solid rgba(204,255,0,.5);outline-offset:1px;}
+  /* 2+ workouts that day: the dot becomes a little flame */
+  .tw-dot.fire{background:none;font-style:normal;width:11px;height:11px;font-size:10px;line-height:11px;
+    display:flex;align-items:center;justify-content:center;margin:-2px 0;
+    filter:drop-shadow(0 0 3px rgba(255,140,0,.9));}
+  .tw-dot.fire.today{outline-color:rgba(255,140,0,.6);}
   .tw-streak{font-size:12px;font-weight:800;width:36px;text-align:right;flex:none;}
   .tw-more{color:var(--muted);font-size:11.5px;text-align:center;padding-top:10px;}
   /* 7-day leaderboard: place badge + "this is you" highlight */
@@ -1180,10 +1185,16 @@ function renderTeamWeek(){
   if(!COMM || !COMM.members || !COMM.members.length){ el.innerHTML='<div class="empty">No crew activity yet.</div>'; return; }
   const wk = teamWeekISO(), today = todayISO();
   el.innerHTML = rankedMembers().map(m=>{
-    const days = new Set(m.workouts.map(w=>w.date));
+    // count sessions per day — a double-workout day earns a 🔥 instead of a dot
+    const perDay = {};
+    m.workouts.forEach(w=>{ if(w.date) perDay[w.date]=(perDay[w.date]||0)+1; });
+    const days = new Set(Object.keys(perDay));
     const hot = days.has(today);
     const me = m.key===COMM.you;
-    const dots = wk.map(d=>`<i class="tw-dot${days.has(d)?' on':''}${d===today?' today':''}"></i>`).join('');
+    const dots = wk.map(d=>{
+      if((perDay[d]||0)>=2) return `<i class="tw-dot fire${d===today?' today':''}" title="${perDay[d]} workouts">🔥</i>`;
+      return `<i class="tw-dot${days.has(d)?' on':''}${d===today?' today':''}"></i>`;
+    }).join('');
     return `<div class="tw-row${hot?' hot':''}${me?' me':''}">
       ${rankBadge(m)}
       <div class="tw-av">${esc(m.name.slice(0,2).toUpperCase())}</div>
@@ -2787,8 +2798,38 @@ loadRemote().then(()=>{ if(S && S.id && S.profile) schedSync(); loadCommunity();
 // re-pull on return to foreground so admin pushes (schedules/program) show up without a cold reopen
 let lastPull=Date.now();
 document.addEventListener('visibilitychange', ()=>{
-  if(!document.hidden && S && S.id && S.profile && Date.now()-lastPull>8000){ lastPull=Date.now(); loadRemote(); }
+  if(!document.hidden && S && S.id && S.profile && Date.now()-lastPull>8000){ lastPull=Date.now(); loadRemote(); checkForUpdate(); }
 });
+
+/* ---- self-update: keep phones on the latest build ----
+   iOS restores a weeks-old Safari tab without ever re-fetching the page, so the
+   DATA syncs but the CODE stays stale (members keep hitting bugs that were fixed
+   long ago). On foreground we re-fetch our own HTML; if the served copy differs
+   from the one we booted with, reload — all state lives in localStorage, so an
+   in-progress workout survives the reload (we still wait it out to be polite). */
+function strHash(s){ let h=5381; for(let i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))|0; } return h; }
+let pageSig=null, lastUpdCheck=0, updatePending=false;
+async function fetchPageSig(){
+  try{ const t=await fetch('/', {cache:'no-store'}).then(r=>r.ok?r.text():null); return t?strHash(t):null; }
+  catch(e){ return null; }
+}
+fetchPageSig().then(s=>{ pageSig=s; });
+async function checkForUpdate(){
+  if(updatePending) return maybeApplyUpdate(); // already know — retry when they're not busy
+  if(pageSig==null || Date.now()-lastUpdCheck<120000) return; // throttle: every 2 min max
+  lastUpdCheck=Date.now();
+  const s=await fetchPageSig();
+  if(s==null || s===pageSig) return;
+  updatePending=true;
+  maybeApplyUpdate();
+}
+function maybeApplyUpdate(){
+  // don't yank the screen during a live workout or with a modal open — the
+  // pending flag retries on the next foreground
+  if((S.active && !activeStale()) || $('modal').classList.contains('open')){ toast('App update ready — it\'ll load when you\'re done'); return; }
+  toast('Updating SPIN CLASS…');
+  setTimeout(()=>location.reload(), 600);
+}
 </script>
 </body>
 </html>
