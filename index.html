@@ -836,8 +836,19 @@ function migrateWeights(){
   const day=86400000, base=new Date(); base.setHours(12,0,0,0);
   const n=S.weights.length;
   S.weights = S.weights.map((x,i)=>{
-    if(typeof x==='number'){ changed=true; return {w:x, at: base.getTime()-(n-1-i)*day}; }
+    const syntheticAt = base.getTime()-(n-1-i)*day;
+    // legacy bare numbers AND numeric strings (older builds stored input values raw)
+    if(typeof x==='number' || (typeof x==='string' && isFinite(+x) && x.trim()!=='')){ changed=true; return {w:+x, at:syntheticAt}; }
+    // object entries with a stringy weight or missing timestamp — coerce in place
+    if(x && typeof x==='object'){
+      if(typeof x.w==='string' && isFinite(+x.w)){ x.w=+x.w; changed=true; }
+      if(!isFinite(+x.at)){ x.at=syntheticAt; changed=true; }
+    }
     return x;
+  }).filter(x=>{
+    const ok = x && typeof x==='object' && isFinite(+x.w);
+    if(!ok) changed=true; // unusable entry (null, NaN, no weight) — drop it rather than crash every render
+    return ok;
   });
   if(changed) S.weights.sort((a,b)=>a.at-b.at);
   return changed;
@@ -951,13 +962,12 @@ function computeTargets(o){
 /* pull the calculator inputs off S.profile (+ latest weight) */
 function targetInputs(){
   const p = P();
-  const w = (S.weights && S.weights.length) ? S.weights[S.weights.length-1].w : null;
-  return {sex:p.sex, age:p.age, heightIn:p.heightIn, weightLbs:w, activity:p.activity, goal:p.goal};
+  return {sex:p.sex, age:p.age, heightIn:p.heightIn, weightLbs:latestWeight(), activity:p.activity, goal:p.goal};
 }
 
 /* =============== helpers =============== */
 const $ = id => document.getElementById(id);
-const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); // null-safe: a null exercise name in old data must never crash a render
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
 function fmtTime(h,m){ const ap=h>=12?'PM':'AM'; const hh=((h+11)%12)+1; return hh+':' + String(m).padStart(2,'0')+' '+ap; }
 function nowStr(){ const d=new Date(); return fmtTime(d.getHours(), d.getMinutes()); }
@@ -1062,7 +1072,8 @@ function weightsInView(all){
 function renderWeightPanel(){
   const sel=$('w-viewsel');
   if(sel) sel.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.wv===weightView));
-  const all=(S.weights||[]).slice().sort((a,b)=>a.at-b.at);
+  // coerce + drop malformed entries (string weights etc.) a sync may have slipped past migration
+  const all=(S.weights||[]).filter(e=>e && isFinite(+e.w)).map(e=>({w:+e.w, at:+e.at||0})).sort((a,b)=>a.at-b.at);
   const p=P();
   if(!all.length){ $('w-now').textContent='—'; $('w-delta').textContent='no weigh-ins yet'; drawChart([]); renderWeightAxis([]); return; }
   const cur=all[all.length-1].w;
@@ -2069,16 +2080,21 @@ function openDoseSheet(){
 }
 function toggleDoseSheet(i){ toggleDose(i); openDoseSheet(); } // re-render the sheet in place
 
+/* latest usable weigh-in as a NUMBER, or null — tolerant of malformed legacy entries */
+function latestWeight(){
+  const ws=(S.weights||[]).filter(e=>e && isFinite(+e.w));
+  return ws.length ? +ws[ws.length-1].w : null;
+}
 function renderProfileCard(){
   const p = P();
   $('p-name').textContent = p.name;
-  const wv = (S.weights && S.weights.length) ? S.weights[S.weights.length-1].w : null;
+  const wv = latestWeight();
   $('p-meta').textContent = (p.goal ? GOAL_LABEL[p.goal]+' · ' : '')
     + (wv!=null ? wv.toFixed(1)+' lbs'+(p.goalWeight?' → '+p.goalWeight:'') : 'no weigh-ins yet')
     + ' · '+p.calTarget+' kcal / '+p.proTarget+'g P';
-  renderWorkoutHistory();
-  renderPhotos();
-  renderWeightPanel();
+  safeRender(renderWorkoutHistory);
+  safeRender(renderPhotos);
+  safeRender(renderWeightPanel);
 }
 /* full training history on the Profile tab, grouped by month — the place to go
    back and review your own workouts (Train's list is the recent/post-session view).
@@ -2197,9 +2213,14 @@ async function deletePhoto(url){
   store.save(); renderAll(); toast('Photo deleted');
 }
 
-function renderAll(){ renderHome(); renderMeals(); renderTrain(); renderStack(); renderProfileCard();
+/* each section renders independently — one section choking on odd data must never
+   blank the rest of the app (this exact failure made one member's whole profile
+   look broken on every browser) */
+function safeRender(fn){ try{ fn(); }catch(e){ console.warn('render section failed:', fn.name||'?', e); } }
+function renderAll(){
+  [renderHome, renderMeals, renderTrain, renderStack, renderProfileCard].forEach(safeRender);
   if(S && S.profile) $('avatar').textContent = P().name + ' · ' + (S.streak||0) + '🔥';
-  if(COMM){ renderTeamWeek(); renderTeamFeed(); } // reflect own just-logged training instantly
+  if(COMM){ safeRender(renderTeamWeek); safeRender(renderTeamFeed); } // reflect own just-logged training instantly
   const pn=$('pin-nudge'); if(pn) pn.style.display=(S && S.profile && !S.pin)?'':'none';
 }
 
@@ -2389,7 +2410,7 @@ const GOAL_LABEL = {cut:'Cutting', maintain:'Maintaining', bulk:'Bulking'};
 function calcProfileTargets(){
   const ft=+$('f-pht-ft').value||0, inch=+$('f-pht-in').value||0;
   const heightIn=(ft||inch)?(ft*12+inch):((S.profile&&S.profile.heightIn)||0);
-  const w=(S.weights&&S.weights.length)?S.weights[S.weights.length-1].w:null;
+  const w=latestWeight();
   const age=+$('f-page').value;
   if(!heightIn || !age || !w){ toast('Add height + age above, and log a weight first'); return; }
   const plan=computeTargets({sex:sexSel, age, heightIn, weightLbs:w, activity:$('f-pactivity').value, goal:goalSel});
@@ -2460,8 +2481,8 @@ function coachReply(q){
   const remaining = Math.max(0, p.calTarget-cal), proLeft = Math.max(0, p.proTarget-pro);
   const _td=todayDOW(), _ti=todayISO();
   const due = S.stack.filter(x=>itemDays(x).includes(_td) && !(x.takenOn && x.takenOn[_ti]));
-  const cur = S.weights.length ? S.weights[S.weights.length-1].w : 0;
-  const delta = (cur - (S.weights.length ? S.weights[0].w : cur)).toFixed(1);
+  const cur = latestWeight() || 0;
+  const delta = (cur - (S.weights.length ? (+((S.weights[0]||{}).w)||cur) : cur)).toFixed(1);
   const t = q.toLowerCase();
 
   if(t.includes('dinner')||t.includes('eat')||t.includes('meal')||t.includes('food'))
@@ -2569,7 +2590,7 @@ function buildContext(){
     calorieTarget: p.calTarget, proteinTarget: p.proTarget, carbTarget: carbTarget(), fatTarget: fatTarget(), waterGoalOz: p.waterGoal || 64,
     todayCalories: cal, todayProtein: pro, todayCarbs: carb, todayFat: fat,
     mealsToday: mealsToday().map(m=>`${m.name} (${m.cal} kcal, ${m.pro}g protein, ${m.carb||0}g carbs, ${m.fat||0}g fat, ${m.time})`),
-    currentWeightLbs: S.weights.length ? S.weights[S.weights.length-1].w : null, goalWeightLbs: p.goalWeight,
+    currentWeightLbs: latestWeight(), goalWeightLbs: p.goalWeight,
     recentWeights: S.weights.slice(-7).map(e=>({lbs:e.w, on:new Date(e.at).toLocaleDateString('en-US',{month:'short',day:'numeric'})})),
     trainingStreakDays: S.streak,
     currentProgramDay: prog.name+' ('+prog.sub+')',
@@ -2738,8 +2759,8 @@ async function adoptAccount(id){
   store.save();
   // switching identity: drop any cached chat from a previous account, then load this one's
   chatHist=[]; try{ localStorage.removeItem('coachchat'); }catch(e){}
+  $('onboard').classList.remove('open'); // close the overlay FIRST — a render hiccup must never trap someone at login
   personalize(); renderAll(); renderChat(); loadCoachChat(); loadCommunity();
-  $('onboard').classList.remove('open');
   toast('Welcome back, '+P().name+'!');
   if(!S.pin) setTimeout(()=>{ openModal('profile'); toast('Lock it in — set a 4-digit PIN 🔐'); }, 1500);
 }
@@ -2789,6 +2810,7 @@ function personalize(){
 
 /* =============== boot =============== */
 if(S && S.profile && !S.id){ S.id = randId(); store.save(); }
+if(S && S.profile && migrateWeights()) store.save(); // heal malformed weight entries already in localStorage, not just on login/pull
 personalize();
 renderAll();
 renderChat();
